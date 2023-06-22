@@ -382,14 +382,12 @@ def copy_and_replace(zip_in, zip_out, config):
 
 def try_decode(content):
     encodings = ['utf-8', 'latin-1']  # Add more encodings if necessary
-
     for encoding in encodings:
         try:
             decoded_content = content.decode(encoding)
             return decoded_content
         except UnicodeDecodeError:
             continue
-
     return None
 
 def replace_header_images(zip_in, zip_out, config, note):
@@ -607,7 +605,7 @@ def place_logo(zip_in, zip_out, config):
                 status += "Rebrand Logo"
             else:
                 # Found image at expected path with new logo size
-                'zip_out.write(config["NewLogoPath"], config["OldLogoPath_formatted"])'
+                zip_out.write(config["NewLogoPath"], config["OldLogoPath_formatted"])
                 status += "Unknown Logo"
 
     if imagecount > 1:
@@ -863,30 +861,49 @@ def process_file(file_in, file_out, config, log):
             docx_replace(doc, replace_duo[0], replace_duo[1])
             prop.title = prop.title.replace(replace_duo[0], replace_duo[1])
 
-        # print(prop.title)
         new_file_path = os.path.basename(file_path)
-        print((config["OutputFolder"]) + new_file_path);
-        doc.save((config["OutputFolder"]) + new_file_path)
+        doc.save((config["BetweenFolder"]) + new_file_path)
 
- 
-    # Open input document and new document
-    # with ZipFile(open(file_in, "rb")) as zip_in:
-    #     # copy document and replace content
-    #     # text_note = copy_and_replace(zip_in, config)
-    #     text_note = ''
-    #     # check for logo
-    #     status, note, warning = '', '', ''
-    #     # status, note, warning = place_logo(zip_in, config)
+       # Open input document and new document
+        with ZipFile(open((config["BetweenFolder"]) + new_file_path, "rb")) as zip_in:
+            # copy document and replace content
+            text_note = ''
+            # check for logo
+            status, note, warning = '', '', ''
 
-    #     with ZipFile(file_out, "w", ZIP_DEFLATED) as zip_out:
-    #         # copy document and replace content
-    #         copy_and_replace(zip_in, zip_out, config)
-    #         # check for logo
-    #         status, note, warning = place_logo(zip_in, zip_out, config)
+            with ZipFile(file_out, "w", ZIP_DEFLATED) as zip_out:
+                # copy document and replace content
+                copy_and_replace(zip_in, zip_out, config)
+                # check for logo
+                status, note, warning = place_logo(zip_in, zip_out, config)
+                # Add missing images
+                add_missing_images(zip_in, zip_out)
 
+        # Remove file from betweenFolder
+        os.remove((config["BetweenFolder"]) + new_file_path)
 
-    # log.write(f"{file_in};{status};{note};{text_note};{warning}\n")
+        log.write(f"{file_in};{status};{note};{text_note};{warning}\n")
 
+def add_missing_images(zip_in, zip_out):
+    """
+    Adds missing images from one Zip archive to another.
+
+    Parameters
+    ----------
+    zip_in : ZipFile
+        The input ZipFile object from which to extract the image filenames.
+
+    zip_out : ZipFile
+        The output ZipFile object where the missing images will be added.
+    """
+    # Get a list of image filenames from zip_in
+    image_files = [item.filename for item in zip_in.infolist() if item.filename.startswith('word/media/')]
+
+    # Check if the image already exists in zip_out, and if not, add it
+    for image_file in image_files:
+        if image_file not in zip_out.namelist():
+            image_data = zip_in.read(image_file)
+            zip_out.writestr(image_file, image_data)
 
 def prepare_log(config):
     '''

@@ -23,6 +23,8 @@ from docx.opc.constants import RELATIONSHIP_TYPE as RT
 import comtypes.client
 from docx.table import _Cell
 import xml.etree.ElementTree as ET
+import win32com.client as win32
+import shutil
 
 FILE_FORMAT_PDF_WORD = 17
 FILE_FORMAT_PDF_EXCEL = 0
@@ -851,6 +853,11 @@ def process_file(file_in, file_out, config, log):
     '''
     file_path = file_in
 
+    if file_path.endswith('.doc'):
+        # Convert .doc file to .docx format
+        convert_doc_to_docx(file_path)
+        # Update the file_path to the converted .docx file
+        file_path = os.path.splitext(file_path)[0] + '.docx'
 
     if file_path.endswith('.docx'):
         doc = Document(file_path)
@@ -904,6 +911,36 @@ def add_missing_images(zip_in, zip_out):
         if image_file not in zip_out.namelist():
             image_data = zip_in.read(image_file)
             zip_out.writestr(image_file, image_data)
+
+def convert_doc_to_docx(doc_file):
+    # Get the folder path and the base filename of the .doc file
+    folder_path = os.path.dirname(doc_file)
+    base_name = os.path.basename(doc_file)
+
+    # Construct the paths for the .docx file and the temporary .docx copy
+    docx_file = os.path.join(folder_path, os.path.splitext(base_name)[0] + '.docx')
+    temp_docx_file = os.path.join(folder_path, os.path.splitext(base_name)[0] + '_temp.docx')
+
+    # Create an instance of the Word application
+    word_app = win32.gencache.EnsureDispatch('Word.Application')
+
+    # Open the .doc file
+    doc = word_app.Documents.Open(doc_file)
+
+    # Save the document as .docx format
+    doc.SaveAs2(temp_docx_file, FileFormat=16)  # 16 represents the .docx format
+
+    # Close the document and the Word application
+    doc.Close()
+    word_app.Quit()
+
+    # Replace the original .doc file with the .docx file
+    shutil.move(temp_docx_file, docx_file)
+
+    # Delete the original .doc file
+    os.remove(doc_file)
+
+
 
 def prepare_log(config):
     '''

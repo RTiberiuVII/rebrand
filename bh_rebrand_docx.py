@@ -891,7 +891,6 @@ def process_file_excel(file_in, file_out, config, log):
         print(worksheet.cell(1, 1).value)
 
     # print(worksheets)
-    
 
     return True
 

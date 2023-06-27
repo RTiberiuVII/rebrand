@@ -1,6 +1,5 @@
 '''
-Author: Ole Gerlof
-Amended by: Tiberiu Rociu
+Author: Tiberiu Rociu, Ole Gerlof
 Date: 21/06/2023
 Version: 1.3
 Purpose:
@@ -25,10 +24,15 @@ from docx.table import _Cell
 import xml.etree.ElementTree as ET
 import win32com.client as win32
 import shutil
+import openpyxl
+import pathlib
 
 FILE_FORMAT_PDF_WORD = 17
 FILE_FORMAT_PDF_EXCEL = 0
 FILE_FORMAT_PDF_PPT = 2
+FILE_FORMAT_XLSX = 51
+FILE_FORMAT_DOCX = 16
+
 
 
 def count_docx(file_name):
@@ -834,6 +838,68 @@ def convert_to_pdf(file_in, config, word, excel, power_point):
         presentation.ExportAsFixedFormat(config["PDFPath"], FILE_FORMAT_PDF_PPT)
         presentation.close()
 
+def process_file_word(file_in, file_out, config, log):
+    file_path = file_in
+    if file_path.endswith('.doc'):
+        # Convert .doc file to .docx format and update file_path
+        file_path = convert_file(file_path, FILE_FORMAT_DOCX)
+    
+    
+    doc = Document(file_path)
+
+    prop = doc.core_properties
+    for replace_duo in config["ReplaceString"]:
+        docx_replace(doc, replace_duo[0], replace_duo[1])
+        prop.title = prop.title.replace(replace_duo[0], replace_duo[1])
+
+    new_file_path = os.path.basename(file_path)
+    doc.save((config["BetweenFolder"]) + new_file_path)
+
+    # Open input document and new document
+    with ZipFile(open((config["BetweenFolder"]) + new_file_path, "rb")) as zip_in:
+        # copy document and replace content
+        text_note = ''
+        # check for logo
+        status, note, warning = '', '', ''
+
+        with ZipFile(file_out, "w", ZIP_DEFLATED) as zip_out:
+            # copy document and replace content
+            copy_and_replace(zip_in, zip_out, config)
+            # check for logo
+            status, note, warning = place_logo(zip_in, zip_out, config)
+            # Add missing images
+            add_missing_images(zip_in, zip_out)
+
+    # Remove file from betweenFolder
+    os.remove((config["BetweenFolder"]) + new_file_path)
+
+    log.write(f"{file_in};{status};{note};{text_note};{warning}\n")
+
+
+def process_file_excel(file_in, file_out, config, log):
+    file_path = file_in
+
+    if file_path.endswith('.xls'):
+        # Convert .xls file to .xlsx and update file path
+        file_path = convert_file(file_path, FILE_FORMAT_XLSX)
+
+    # Get workbook from path
+    workbook = openpyxl.load_workbook(file_path)
+    
+    # Cycle through sheets
+    for worksheet in workbook.worksheets:
+        print(worksheet.cell(1, 1).value)
+
+    # print(worksheets)
+    
+
+    return True
+
+def process_file_powerpoint(file_in, file_out, config, log):
+    return True
+
+def process_file_pdf(file_in, file_out, config, log):
+    return True
 
 def process_file(file_in, file_out, config, log):
     '''
@@ -851,45 +917,17 @@ def process_file(file_in, file_out, config, log):
         content of the configuration file as dictonary with the tag as
         key and the information as value
     '''
-    file_path = file_in
+    file_extension = pathlib.Path(file_in).suffix
+    match file_extension:
+        case '.doc' | '.docx':
+            process_file_word(file_in, file_out, config, log)
+        case '.xlsx' | '.xls':
+            process_file_excel(file_in, file_out, config, log)
+        case '.pptx':
+            process_file_powerpoint(file_in, file_out, config, log)
+        case '.pdf':
+            process_file_pdf(file_in, file_out, config, log)
 
-    if file_path.endswith('.doc'):
-        # Convert .doc file to .docx format
-        convert_doc_to_docx(file_path)
-        # Update the file_path to the converted .docx file
-        file_path = os.path.splitext(file_path)[0] + '.docx'
-
-    if file_path.endswith('.docx'):
-        doc = Document(file_path)
-
-        prop = doc.core_properties
-
-        for replace_duo in config["ReplaceString"]:
-            docx_replace(doc, replace_duo[0], replace_duo[1])
-            prop.title = prop.title.replace(replace_duo[0], replace_duo[1])
-
-        new_file_path = os.path.basename(file_path)
-        doc.save((config["BetweenFolder"]) + new_file_path)
-
-       # Open input document and new document
-        with ZipFile(open((config["BetweenFolder"]) + new_file_path, "rb")) as zip_in:
-            # copy document and replace content
-            text_note = ''
-            # check for logo
-            status, note, warning = '', '', ''
-
-            with ZipFile(file_out, "w", ZIP_DEFLATED) as zip_out:
-                # copy document and replace content
-                copy_and_replace(zip_in, zip_out, config)
-                # check for logo
-                status, note, warning = place_logo(zip_in, zip_out, config)
-                # Add missing images
-                add_missing_images(zip_in, zip_out)
-
-        # Remove file from betweenFolder
-        os.remove((config["BetweenFolder"]) + new_file_path)
-
-        log.write(f"{file_in};{status};{note};{text_note};{warning}\n")
 
 def add_missing_images(zip_in, zip_out):
     """
@@ -912,34 +950,47 @@ def add_missing_images(zip_in, zip_out):
             image_data = zip_in.read(image_file)
             zip_out.writestr(image_file, image_data)
 
-def convert_doc_to_docx(doc_file):
-    # Get the folder path and the base filename of the .doc file
-    folder_path = os.path.dirname(doc_file)
-    base_name = os.path.basename(doc_file)
+def convert_file(file, new_file_format):
+    # Get the folder path and the base filename of the original file
+    folder_path = os.path.dirname(file)
+    base_name = os.path.basename(file)
 
-    # Construct the paths for the .docx file and the temporary .docx copy
-    docx_file = os.path.join(folder_path, os.path.splitext(base_name)[0] + '.docx')
-    temp_docx_file = os.path.join(folder_path, os.path.splitext(base_name)[0] + '_temp.docx')
+    # Get file application depending on file type
+    file_app = None
+    extension = None
+    opened_file = None
+    if new_file_format == 16:
+        file_app = win32.gencache.EnsureDispatch('Word.Application')
+        extension = '.docx'
 
-    # Create an instance of the Word application
-    word_app = win32.gencache.EnsureDispatch('Word.Application')
+        # Open the .doc file
+        opened_file = file_app.Documents.Open(file)
 
-    # Open the .doc file
-    doc = word_app.Documents.Open(doc_file)
+    elif new_file_format == 51:
+        file_app = win32.gencache.EnsureDispatch('Excel.Application')
+        extension = '.xlsx'
 
-    # Save the document as .docx format
-    doc.SaveAs2(temp_docx_file, FileFormat=16)  # 16 represents the .docx format
+        # Open the .xls file
+        opened_file = file_app.Workbooks.Open(file)
 
-    # Close the document and the Word application
-    doc.Close()
-    word_app.Quit()
+    # Construct the paths for the new file and the temporary new copy
+    new_file = os.path.join(folder_path, os.path.splitext(base_name)[0] + extension)
+    temp_new_file = os.path.join(folder_path, os.path.splitext(base_name)[0] + '_temp' + extension)
 
-    # Replace the original .doc file with the .docx file
-    shutil.move(temp_docx_file, docx_file)
+    # Save the document as the new format
+    opened_file.SaveAs(temp_new_file, FileFormat=new_file_format)
 
-    # Delete the original .doc file
-    os.remove(doc_file)
+    # Close the document and the application
+    opened_file.Close()
+    file_app.Quit()
 
+    # Delete the original file
+    os.remove(file)
+
+    # Rename temp file to original name
+    os.rename(temp_new_file, new_file)
+
+    return new_file
 
 
 def prepare_log(config):

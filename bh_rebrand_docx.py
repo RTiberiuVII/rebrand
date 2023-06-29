@@ -26,6 +26,7 @@ import win32com.client as win32
 import shutil
 import openpyxl
 import pathlib
+from PIL import Image, ImageOps
 
 FILE_FORMAT_PDF_WORD = 17
 FILE_FORMAT_PDF_EXCEL = 0
@@ -396,6 +397,54 @@ def try_decode(content):
             continue
     return None
 
+def resize_image(input_image_path, output_image_folder, reference_image_path):
+    """
+    Resize the input image to match the aspect ratio of the reference image, preserving the aspect ratio and avoiding stretching.
+
+    Parameters:
+        input_image_path (str): Path to the input image file.
+        output_image_folder (str): Folder path to save the resized image.
+        reference_image_path (str): Path to the reference image for aspect ratio.
+
+    Returns:
+        new_image_path (str): Path to the new resized image.
+    """
+    # Open the reference image to get its aspect ratio
+    with Image.open(reference_image_path) as reference_image:
+        ref_height = reference_image.height
+        ref_width = reference_image.width
+        ref_aspect_ratio = ref_width / ref_height
+
+    new_image_path = f'{output_image_folder}/resized_image_{ref_width}x{ref_height}.png'
+    if (not os.path.exists(new_image_path)):
+
+        # Open the input image
+        with Image.open(input_image_path) as input_image:
+            # Calculate the new dimensions for the input image while maintaining aspect ratio
+            input_aspect_ratio = input_image.width / input_image.height
+
+            if input_aspect_ratio > ref_aspect_ratio:
+                # The input image is wider, adjust the width to match the reference aspect ratio
+                new_width = ref_width
+                new_height = int(new_width / input_aspect_ratio)
+            else:
+                # The input image is taller, adjust the height to match the reference aspect ratio
+                new_height = ref_height
+                new_width = int(new_height * input_aspect_ratio)
+
+            # Resize the input image with aspect ratio preserved
+            resized_image = input_image.resize((new_width, new_height))
+
+            # Create a blank image with the reference aspect ratio and paste the resized image onto it
+            result_image = Image.new("RGB", (ref_width, ref_height), (46, 46, 46))
+            offset = ((ref_width - new_width) // 2, (ref_height - new_height) // 2)
+            result_image.paste(resized_image, offset)
+
+            # Save the resized image
+            result_image.save(new_image_path)
+
+    return new_image_path
+    
 def replace_header_images(zip_in, zip_out, config, note):
     '''
     Search for images in the header and replace them with the logo
@@ -438,10 +487,25 @@ def replace_header_images(zip_in, zip_out, config, note):
                 # Get the full path: Path in target string is just media/[image]
                 # Path is either word/media/[image] or xls/media/[image]
                 try:
+                    # Skip image if not in the right format
+                    if (image_location.endswith('.wmf')):
+                        continue
+
                     header_image_path = f"{config['filetype']}/{image_location}"
+
+                    # Etract image from the zip object
+                    zip_image_location = 'word/' + image_location
+                    zip_in.extract(zip_image_location, path=config['ImagesFolder'])
+
+                    # Resize image to fit in the extracted's image container
+                    new_image_path = resize_image(config['NewLogoPath'], config['ImagesFolder'], config['ImagesFolder'] + zip_image_location)
+
+                    # Delete extracted image
+                    os.remove(config['ImagesFolder'] + zip_image_location)
+                    
                     if not header_image_path in zip_out.namelist():
                         print(f"Replaced header image at {header_image_path}")
-                        zip_out.write(config["NewLogoPath"], header_image_path)
+                        zip_out.write(new_image_path, header_image_path)
                         note += f"Replaced header image {header_image_path},"
                 except KeyError:
                     # Filetype is not in config
@@ -450,7 +514,7 @@ def replace_header_images(zip_in, zip_out, config, note):
                         if image_location in location:
                             if not image_location in zip_out.namelist():
                                 print(f"Replaced header image at {location}")
-                                zip_out.write(config["NewLogoPath"], location)
+                                zip_out.write(new_image_path, location)
                                 note += f"Replaced header image {location},"
                             break
 
@@ -840,13 +904,14 @@ def convert_to_pdf(file_in, config, word, excel, power_point):
 
 def process_file_word(file_in, file_out, config, log):
     file_path = file_in
+
+    # Convert file to docx if it ends in doc
     if file_path.endswith('.doc'):
         # Convert .doc file to .docx format and update file_path
         file_path = convert_file(file_path, FILE_FORMAT_DOCX)
     
     
     doc = Document(file_path)
-
     prop = doc.core_properties
     for replace_duo in config["ReplaceString"]:
         docx_replace(doc, replace_duo[0], replace_duo[1])

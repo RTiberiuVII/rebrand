@@ -26,6 +26,7 @@ import win32com.client as win32
 import shutil
 import openpyxl
 import pathlib
+from PIL import Image, ImageOps
 
 FILE_FORMAT_PDF_WORD = 17
 FILE_FORMAT_PDF_EXCEL = 0
@@ -101,61 +102,63 @@ def replace_text(runs, target, replace):
 
 
 def docx_replace(doc, target, replace):
+    try:
+        # Replace text in tables
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    for paragraph in cell.paragraphs:
+                        # Replace text in table cells
+                        replace_text(paragraph.runs, target, replace)
+                        # Replace text in hyperlinks within table cells
+                        for link in paragraph._element.xpath(".//w:hyperlink"):
+                            replace_text(link.xpath("w:r", namespaces=link.nsmap), target, replace)
 
-    # Replace text in tables
-    for table in doc.tables:
-        for row in table.rows:
-            for cell in row.cells:
-                for paragraph in cell.paragraphs:
-                    # Replace text in table cells
+        # Replace text in headers and footers
+        for section in doc.sections:
+            # Process the header and footer for the main body and first page
+            for header in [section.header, section.first_page_header]:
+                for paragraph in header.paragraphs:
+                    # Find all <w:t> tags within the header paragraphs
+                    w_t_tags = paragraph._element.xpath(".//w:t")
+
+                    # Replace text in header paragraphs
+                    replace_text(w_t_tags, target, replace)
+
+                for table in header.tables:
+                    for row in table.rows:
+                        for cell in row.cells:
+                            for paragraph in cell.paragraphs:
+                                # Replace text in table cells within headers
+                                replace_text(paragraph.runs, target, replace)
+                                # Replace text in hyperlinks within table cells within headers
+                                for link in paragraph._element.xpath(".//w:hyperlink"):
+                                    replace_text(link.xpath("w:r", namespaces=link.nsmap), target, replace)
+
+            for footer in [section.footer, section.first_page_footer]:
+                for paragraph in footer.paragraphs:
+                    # Replace text in footer paragraphs
                     replace_text(paragraph.runs, target, replace)
-                    # Replace text in hyperlinks within table cells
-                    for link in paragraph._element.xpath(".//w:hyperlink"):
-                        replace_text(link.xpath("w:r", namespaces=link.nsmap), target, replace)
 
-    # Replace text in headers and footers
-    for section in doc.sections:
-        # Process the header and footer for the main body and first page
-        for header in [section.header, section.first_page_header]:
-            for paragraph in header.paragraphs:
-                # Find all <w:t> tags within the header paragraphs
-                w_t_tags = paragraph._element.xpath(".//w:t")
+                for table in footer.tables:
+                    for row in table.rows:
+                        for cell in row.cells:
+                            for paragraph in cell.paragraphs:
+                                # Replace text in table cells within footers
+                                replace_text(paragraph.runs, target, replace)
+                                # Replace text in hyperlinks within table cells within footers
+                                for link in paragraph._element.xpath(".//w:hyperlink"):
+                                    replace_text(link.xpath("w:r", namespaces=link.nsmap), target, replace)
 
-                # Replace text in header paragraphs
-                replace_text(w_t_tags, target, replace)
-
-            for table in header.tables:
-                for row in table.rows:
-                    for cell in row.cells:
-                        for paragraph in cell.paragraphs:
-                            # Replace text in table cells within headers
-                            replace_text(paragraph.runs, target, replace)
-                            # Replace text in hyperlinks within table cells within headers
-                            for link in paragraph._element.xpath(".//w:hyperlink"):
-                                replace_text(link.xpath("w:r", namespaces=link.nsmap), target, replace)
-
-        for footer in [section.footer, section.first_page_footer]:
-            for paragraph in footer.paragraphs:
-                # Replace text in footer paragraphs
-                replace_text(paragraph.runs, target, replace)
-
-            for table in footer.tables:
-                for row in table.rows:
-                    for cell in row.cells:
-                        for paragraph in cell.paragraphs:
-                            # Replace text in table cells within footers
-                            replace_text(paragraph.runs, target, replace)
-                            # Replace text in hyperlinks within table cells within footers
-                            for link in paragraph._element.xpath(".//w:hyperlink"):
-                                replace_text(link.xpath("w:r", namespaces=link.nsmap), target, replace)
-
-    # Replace text in the main document body
-    for paragraph in doc.paragraphs:
-        # Replace text in main body paragraphs
-        replace_text(paragraph.runs, target, replace)
-        # Replace text in hyperlinks within main body paragraphs
-        for link in paragraph._element.xpath(".//w:hyperlink"):
-            replace_text(link.xpath("w:r", namespaces=link.nsmap), target, replace)
+        # Replace text in the main document body
+        for paragraph in doc.paragraphs:
+            # Replace text in main body paragraphs
+            replace_text(paragraph.runs, target, replace)
+            # Replace text in hyperlinks within main body paragraphs
+            for link in paragraph._element.xpath(".//w:hyperlink"):
+                replace_text(link.xpath("w:r", namespaces=link.nsmap), target, replace)
+    except IndexError:
+        log.write('File is skipped because of an indexerror.')
 
 
 def text_rebrand(file_in, config):
@@ -396,6 +399,54 @@ def try_decode(content):
             continue
     return None
 
+def resize_image(input_image_path, output_image_folder, reference_image_path):
+    """
+    Resize the input image to match the aspect ratio of the reference image, preserving the aspect ratio and avoiding stretching.
+
+    Parameters:
+        input_image_path (str): Path to the input image file.
+        output_image_folder (str): Folder path to save the resized image.
+        reference_image_path (str): Path to the reference image for aspect ratio.
+
+    Returns:
+        new_image_path (str): Path to the new resized image.
+    """
+    # Open the reference image to get its aspect ratio
+    with Image.open(reference_image_path) as reference_image:
+        ref_height = reference_image.height
+        ref_width = reference_image.width
+        ref_aspect_ratio = ref_width / ref_height
+
+    new_image_path = f'{output_image_folder}/resized_image_{ref_width}x{ref_height}.png'
+    if (not os.path.exists(new_image_path)):
+
+        # Open the input image
+        with Image.open(input_image_path) as input_image:
+            # Calculate the new dimensions for the input image while maintaining aspect ratio
+            input_aspect_ratio = input_image.width / input_image.height
+
+            if input_aspect_ratio > ref_aspect_ratio:
+                # The input image is wider, adjust the width to match the reference aspect ratio
+                new_width = ref_width
+                new_height = int(new_width / input_aspect_ratio)
+            else:
+                # The input image is taller, adjust the height to match the reference aspect ratio
+                new_height = ref_height
+                new_width = int(new_height * input_aspect_ratio)
+
+            # Resize the input image with aspect ratio preserved
+            resized_image = input_image.resize((new_width, new_height))
+
+            # Create a blank image with the reference aspect ratio and paste the resized image onto it
+            result_image = Image.new("RGB", (ref_width, ref_height), (46, 46, 46))
+            offset = ((ref_width - new_width) // 2, (ref_height - new_height) // 2)
+            result_image.paste(resized_image, offset)
+
+            # Save the resized image
+            result_image.save(new_image_path)
+
+    return new_image_path
+    
 def replace_header_images(zip_in, zip_out, config, note):
     '''
     Search for images in the header and replace them with the logo
@@ -419,7 +470,6 @@ def replace_header_images(zip_in, zip_out, config, note):
     warning: string
         warning if multiple header images have been replaced
     '''
-    print('CALLED header images')
     warning = ""
     # Check every filename for header --> can contain information about images in the header
     # Possible filenames: header2.xml.rels, header3.xml.rels
@@ -438,10 +488,25 @@ def replace_header_images(zip_in, zip_out, config, note):
                 # Get the full path: Path in target string is just media/[image]
                 # Path is either word/media/[image] or xls/media/[image]
                 try:
+                    # Skip image if not in the right format
+                    if (image_location.endswith('.wmf')):
+                        continue
+
                     header_image_path = f"{config['filetype']}/{image_location}"
+
+                    # Etract image from the zip object
+                    zip_image_location = 'word/' + image_location
+                    zip_in.extract(zip_image_location, path=config['ImagesFolder'])
+
+                    # Resize image to fit in the extracted's image container
+                    new_image_path = resize_image(config['NewLogoPath'], config['ImagesFolder'], config['ImagesFolder'] + zip_image_location)
+
+                    # Delete extracted image
+                    os.remove(config['ImagesFolder'] + zip_image_location)
+                    
                     if not header_image_path in zip_out.namelist():
                         print(f"Replaced header image at {header_image_path}")
-                        zip_out.write(config["NewLogoPath"], header_image_path)
+                        zip_out.write(new_image_path, header_image_path)
                         note += f"Replaced header image {header_image_path},"
                 except KeyError:
                     # Filetype is not in config
@@ -450,7 +515,7 @@ def replace_header_images(zip_in, zip_out, config, note):
                         if image_location in location:
                             if not image_location in zip_out.namelist():
                                 print(f"Replaced header image at {location}")
-                                zip_out.write(config["NewLogoPath"], location)
+                                zip_out.write(new_image_path, location)
                                 note += f"Replaced header image {location},"
                             break
 
@@ -653,10 +718,8 @@ def place_logo(zip_in, zip_out, config):
                         'zip_out.write(config["NewLogoPath"], config["OldLogoPath_formatted"])'
                         status += "(" + str(multicount) + ") Unknown Logo, "
 
-    print('config["ReplaceHeaderImage"].lower()', config["ReplaceHeaderImage"].lower())
     # Check if every image in the header should be replaced
     if "true" in config["ReplaceHeaderImage"].lower():
-        print('Calling header images')
         note, warning = replace_header_images(zip_in, zip_out, config, note)
     else:
         note = check_header_images(zip_in, config, note)
@@ -838,15 +901,16 @@ def convert_to_pdf(file_in, config, word, excel, power_point):
         presentation.ExportAsFixedFormat(config["PDFPath"], FILE_FORMAT_PDF_PPT)
         presentation.close()
 
-def process_file_word(file_in, file_out, config, log):
+def process_file_word(file_in, file_out, config):
     file_path = file_in
+
+    # Convert file to docx if it ends in doc
     if file_path.endswith('.doc'):
         # Convert .doc file to .docx format and update file_path
         file_path = convert_file(file_path, FILE_FORMAT_DOCX)
     
     
     doc = Document(file_path)
-
     prop = doc.core_properties
     for replace_duo in config["ReplaceString"]:
         docx_replace(doc, replace_duo[0], replace_duo[1])
@@ -876,7 +940,7 @@ def process_file_word(file_in, file_out, config, log):
     log.write(f"{file_in};{status};{note};{text_note};{warning}\n")
 
 
-def process_file_excel(file_in, file_out, config, log):
+def process_file_excel(file_in, file_out, config):
     file_path = file_in
 
     if file_path.endswith('.xls'):
@@ -894,13 +958,13 @@ def process_file_excel(file_in, file_out, config, log):
 
     return True
 
-def process_file_powerpoint(file_in, file_out, config, log):
+def process_file_powerpoint(file_in, file_out, config):
     return True
 
-def process_file_pdf(file_in, file_out, config, log):
+def process_file_pdf(file_in, file_out, config):
     return True
 
-def process_file(file_in, file_out, config, log):
+def process_file(file_in, file_out, config):
     '''
     Replaces the old BHGE logo and copyright information
 
@@ -919,13 +983,13 @@ def process_file(file_in, file_out, config, log):
     file_extension = pathlib.Path(file_in).suffix
     match file_extension:
         case '.doc' | '.docx':
-            process_file_word(file_in, file_out, config, log)
+            process_file_word(file_in, file_out, config)
         case '.xlsx' | '.xls':
-            process_file_excel(file_in, file_out, config, log)
+            process_file_excel(file_in, file_out, config)
         case '.pptx':
-            process_file_powerpoint(file_in, file_out, config, log)
+            process_file_powerpoint(file_in, file_out, config)
         case '.pdf':
-            process_file_pdf(file_in, file_out, config, log)
+            process_file_pdf(file_in, file_out, config)
 
 
 def add_missing_images(zip_in, zip_out):
@@ -1058,6 +1122,7 @@ def main():
 
         # Check if input directory exists
         if os.path.isdir(config["InputFolder"]):
+            global log;
             log = prepare_log(config)
 
             # Loop over every file in the directory
@@ -1089,9 +1154,12 @@ def main():
                 config["LegacyBHLogoPath_formatted"] = config["LegacyBHLogoPath"].format(
                     filetype = config["filetype"])
 
-                # Process the file
+                # Process the file if it's not empty
                 print(f"Processing {file}")
-                process_file(file_in, file_out, config, log)
+                if (os.path.getsize(file_in) != 0):
+                    process_file(file_in, file_out, config)
+                else:
+                    print(f"File skipped because it's empty: {file}")
 
                 # End timer and output time
                 print(f"Processing took {time() - start_time:.3f} seconds")

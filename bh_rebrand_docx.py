@@ -102,61 +102,63 @@ def replace_text(runs, target, replace):
 
 
 def docx_replace(doc, target, replace):
+    try:
+        # Replace text in tables
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    for paragraph in cell.paragraphs:
+                        # Replace text in table cells
+                        replace_text(paragraph.runs, target, replace)
+                        # Replace text in hyperlinks within table cells
+                        for link in paragraph._element.xpath(".//w:hyperlink"):
+                            replace_text(link.xpath("w:r", namespaces=link.nsmap), target, replace)
 
-    # Replace text in tables
-    for table in doc.tables:
-        for row in table.rows:
-            for cell in row.cells:
-                for paragraph in cell.paragraphs:
-                    # Replace text in table cells
+        # Replace text in headers and footers
+        for section in doc.sections:
+            # Process the header and footer for the main body and first page
+            for header in [section.header, section.first_page_header]:
+                for paragraph in header.paragraphs:
+                    # Find all <w:t> tags within the header paragraphs
+                    w_t_tags = paragraph._element.xpath(".//w:t")
+
+                    # Replace text in header paragraphs
+                    replace_text(w_t_tags, target, replace)
+
+                for table in header.tables:
+                    for row in table.rows:
+                        for cell in row.cells:
+                            for paragraph in cell.paragraphs:
+                                # Replace text in table cells within headers
+                                replace_text(paragraph.runs, target, replace)
+                                # Replace text in hyperlinks within table cells within headers
+                                for link in paragraph._element.xpath(".//w:hyperlink"):
+                                    replace_text(link.xpath("w:r", namespaces=link.nsmap), target, replace)
+
+            for footer in [section.footer, section.first_page_footer]:
+                for paragraph in footer.paragraphs:
+                    # Replace text in footer paragraphs
                     replace_text(paragraph.runs, target, replace)
-                    # Replace text in hyperlinks within table cells
-                    for link in paragraph._element.xpath(".//w:hyperlink"):
-                        replace_text(link.xpath("w:r", namespaces=link.nsmap), target, replace)
 
-    # Replace text in headers and footers
-    for section in doc.sections:
-        # Process the header and footer for the main body and first page
-        for header in [section.header, section.first_page_header]:
-            for paragraph in header.paragraphs:
-                # Find all <w:t> tags within the header paragraphs
-                w_t_tags = paragraph._element.xpath(".//w:t")
+                for table in footer.tables:
+                    for row in table.rows:
+                        for cell in row.cells:
+                            for paragraph in cell.paragraphs:
+                                # Replace text in table cells within footers
+                                replace_text(paragraph.runs, target, replace)
+                                # Replace text in hyperlinks within table cells within footers
+                                for link in paragraph._element.xpath(".//w:hyperlink"):
+                                    replace_text(link.xpath("w:r", namespaces=link.nsmap), target, replace)
 
-                # Replace text in header paragraphs
-                replace_text(w_t_tags, target, replace)
-
-            for table in header.tables:
-                for row in table.rows:
-                    for cell in row.cells:
-                        for paragraph in cell.paragraphs:
-                            # Replace text in table cells within headers
-                            replace_text(paragraph.runs, target, replace)
-                            # Replace text in hyperlinks within table cells within headers
-                            for link in paragraph._element.xpath(".//w:hyperlink"):
-                                replace_text(link.xpath("w:r", namespaces=link.nsmap), target, replace)
-
-        for footer in [section.footer, section.first_page_footer]:
-            for paragraph in footer.paragraphs:
-                # Replace text in footer paragraphs
-                replace_text(paragraph.runs, target, replace)
-
-            for table in footer.tables:
-                for row in table.rows:
-                    for cell in row.cells:
-                        for paragraph in cell.paragraphs:
-                            # Replace text in table cells within footers
-                            replace_text(paragraph.runs, target, replace)
-                            # Replace text in hyperlinks within table cells within footers
-                            for link in paragraph._element.xpath(".//w:hyperlink"):
-                                replace_text(link.xpath("w:r", namespaces=link.nsmap), target, replace)
-
-    # Replace text in the main document body
-    for paragraph in doc.paragraphs:
-        # Replace text in main body paragraphs
-        replace_text(paragraph.runs, target, replace)
-        # Replace text in hyperlinks within main body paragraphs
-        for link in paragraph._element.xpath(".//w:hyperlink"):
-            replace_text(link.xpath("w:r", namespaces=link.nsmap), target, replace)
+        # Replace text in the main document body
+        for paragraph in doc.paragraphs:
+            # Replace text in main body paragraphs
+            replace_text(paragraph.runs, target, replace)
+            # Replace text in hyperlinks within main body paragraphs
+            for link in paragraph._element.xpath(".//w:hyperlink"):
+                replace_text(link.xpath("w:r", namespaces=link.nsmap), target, replace)
+    except IndexError:
+        log.write('File is skipped because of an indexerror.')
 
 
 def text_rebrand(file_in, config):
@@ -468,7 +470,6 @@ def replace_header_images(zip_in, zip_out, config, note):
     warning: string
         warning if multiple header images have been replaced
     '''
-    print('CALLED header images')
     warning = ""
     # Check every filename for header --> can contain information about images in the header
     # Possible filenames: header2.xml.rels, header3.xml.rels
@@ -717,10 +718,8 @@ def place_logo(zip_in, zip_out, config):
                         'zip_out.write(config["NewLogoPath"], config["OldLogoPath_formatted"])'
                         status += "(" + str(multicount) + ") Unknown Logo, "
 
-    print('config["ReplaceHeaderImage"].lower()', config["ReplaceHeaderImage"].lower())
     # Check if every image in the header should be replaced
     if "true" in config["ReplaceHeaderImage"].lower():
-        print('Calling header images')
         note, warning = replace_header_images(zip_in, zip_out, config, note)
     else:
         note = check_header_images(zip_in, config, note)
@@ -902,7 +901,7 @@ def convert_to_pdf(file_in, config, word, excel, power_point):
         presentation.ExportAsFixedFormat(config["PDFPath"], FILE_FORMAT_PDF_PPT)
         presentation.close()
 
-def process_file_word(file_in, file_out, config, log):
+def process_file_word(file_in, file_out, config):
     file_path = file_in
 
     # Convert file to docx if it ends in doc
@@ -941,7 +940,7 @@ def process_file_word(file_in, file_out, config, log):
     log.write(f"{file_in};{status};{note};{text_note};{warning}\n")
 
 
-def process_file_excel(file_in, file_out, config, log):
+def process_file_excel(file_in, file_out, config):
     file_path = file_in
 
     if file_path.endswith('.xls'):
@@ -959,13 +958,13 @@ def process_file_excel(file_in, file_out, config, log):
 
     return True
 
-def process_file_powerpoint(file_in, file_out, config, log):
+def process_file_powerpoint(file_in, file_out, config):
     return True
 
-def process_file_pdf(file_in, file_out, config, log):
+def process_file_pdf(file_in, file_out, config):
     return True
 
-def process_file(file_in, file_out, config, log):
+def process_file(file_in, file_out, config):
     '''
     Replaces the old BHGE logo and copyright information
 
@@ -984,13 +983,13 @@ def process_file(file_in, file_out, config, log):
     file_extension = pathlib.Path(file_in).suffix
     match file_extension:
         case '.doc' | '.docx':
-            process_file_word(file_in, file_out, config, log)
+            process_file_word(file_in, file_out, config)
         case '.xlsx' | '.xls':
-            process_file_excel(file_in, file_out, config, log)
+            process_file_excel(file_in, file_out, config)
         case '.pptx':
-            process_file_powerpoint(file_in, file_out, config, log)
+            process_file_powerpoint(file_in, file_out, config)
         case '.pdf':
-            process_file_pdf(file_in, file_out, config, log)
+            process_file_pdf(file_in, file_out, config)
 
 
 def add_missing_images(zip_in, zip_out):
@@ -1123,6 +1122,7 @@ def main():
 
         # Check if input directory exists
         if os.path.isdir(config["InputFolder"]):
+            global log;
             log = prepare_log(config)
 
             # Loop over every file in the directory
@@ -1154,9 +1154,12 @@ def main():
                 config["LegacyBHLogoPath_formatted"] = config["LegacyBHLogoPath"].format(
                     filetype = config["filetype"])
 
-                # Process the file
+                # Process the file if it's not empty
                 print(f"Processing {file}")
-                process_file(file_in, file_out, config, log)
+                if (os.path.getsize(file_in) != 0):
+                    process_file(file_in, file_out, config)
+                else:
+                    print(f"File skipped because it's empty: {file}")
 
                 # End timer and output time
                 print(f"Processing took {time() - start_time:.3f} seconds")

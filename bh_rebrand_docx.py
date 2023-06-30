@@ -101,7 +101,7 @@ def replace_text(runs, target, replace):
     return
 
 
-def docx_replace(doc, target, replace):
+def docx_replace(doc, target, replace, warning):
     try:
         # Replace text in tables
         for table in doc.tables:
@@ -158,8 +158,9 @@ def docx_replace(doc, target, replace):
             for link in paragraph._element.xpath(".//w:hyperlink"):
                 replace_text(link.xpath("w:r", namespaces=link.nsmap), target, replace)
     except IndexError:
-        log.write('File is skipped because of an indexerror.')
+        warning += 'File is skipped because of an indexerror!.'
 
+    return warning
 
 def text_rebrand(file_in, config):
     # Store file path from CL Arguments.
@@ -400,7 +401,7 @@ def try_decode(content):
     return None
 
 def resize_image(input_image_path, output_image_folder, reference_image_path):
-    """
+    '''
     Resize the input image to match the aspect ratio of the reference image, preserving the aspect ratio and avoiding stretching.
 
     Parameters:
@@ -410,7 +411,7 @@ def resize_image(input_image_path, output_image_folder, reference_image_path):
 
     Returns:
         new_image_path (str): Path to the new resized image.
-    """
+    '''
     # Open the reference image to get its aspect ratio
     with Image.open(reference_image_path) as reference_image:
         ref_height = reference_image.height
@@ -479,9 +480,9 @@ def replace_header_images(zip_in, zip_out, config, note):
             # Disable error from using \S\s in a binary string which is needed for regex
             # Get every target image
             image_locations = findall(b'Target="media[\S\s]*?"', zip_in.read(file))
-            print('image_locations', image_locations)
+            # print('image_locations', image_locations) # FOR TESTING - DELETE AFTER
             if len(image_locations) > 1:
-                print(">>Changing multiple header images!")
+                # print(">>Changing multiple header images!") # FOR TESTING - DELETE AFTER
                 warning = "Warning: Multiple images found in header"
             for image_location in image_locations:
                 image_location = image_location[image_location.find(b"media"):-1].decode("ascii")
@@ -505,7 +506,7 @@ def replace_header_images(zip_in, zip_out, config, note):
                     os.remove(config['ImagesFolder'] + zip_image_location)
                     
                     if not header_image_path in zip_out.namelist():
-                        print(f"Replaced header image at {header_image_path}")
+                        # print(f"Replaced header image at {header_image_path}") # FOR TESTING - DELETE AFTER
                         zip_out.write(new_image_path, header_image_path)
                         note += f"Replaced header image {header_image_path},"
                 except KeyError:
@@ -904,6 +905,10 @@ def convert_to_pdf(file_in, config, word, excel, power_point):
 def process_file_word(file_in, file_out, config):
     file_path = file_in
 
+    # log variables
+    text_note = ''
+    status, note, warning = '', '', ''
+
     # Convert file to docx if it ends in doc
     if file_path.endswith('.doc'):
         # Convert .doc file to .docx format and update file_path
@@ -913,7 +918,7 @@ def process_file_word(file_in, file_out, config):
     doc = Document(file_path)
     prop = doc.core_properties
     for replace_duo in config["ReplaceString"]:
-        docx_replace(doc, replace_duo[0], replace_duo[1])
+        warning =  docx_replace(doc, replace_duo[0], replace_duo[1], note, warning)
         prop.title = prop.title.replace(replace_duo[0], replace_duo[1])
 
     new_file_path = os.path.basename(file_path)
@@ -921,11 +926,6 @@ def process_file_word(file_in, file_out, config):
 
     # Open input document and new document
     with ZipFile(open((config["BetweenFolder"]) + new_file_path, "rb")) as zip_in:
-        # copy document and replace content
-        text_note = ''
-        # check for logo
-        status, note, warning = '', '', ''
-
         with ZipFile(file_out, "w", ZIP_DEFLATED) as zip_out:
             # copy document and replace content
             copy_and_replace(zip_in, zip_out, config)
@@ -1081,7 +1081,7 @@ def prepare_log(config):
     log = open(log_path, "w+", encoding="utf-8")
 
     log.write("sep=;\n")
-    log.write("Inputfile;Logo;Notes;LegacyText\n")
+    log.write("Inputfile;Logo;Notes;LegacyText;Warning\n")
 
     print(f"Logging in file {log_name}")
     return log
@@ -1091,6 +1091,7 @@ def main():
     '''
     Starts processing of files and conversion to PDF
     '''
+    script_run_time = time()
     if len(sys.argv) == 2:
         # Put elements of config file into a dictionary
         config = map_config(sys.argv[1])
@@ -1188,11 +1189,51 @@ def main():
         if pdf_conversion:
             quit_com_servers(word, excel, power_point)
 
-        print("All done")
+        print(f"All done! The script ran for {time() - script_run_time:.3f} seconds")
 
     else:
         print("Specify an existing config file")
+    
 
+def compare_images(image_path1, image_path2):
+
+    '''
+    Compare two images based on their pixel values and determine their similarity.
+
+    Args:
+        image_path1 (str): File path of the first image.
+        image_path2 (str): File path of the second image.
+
+    Returns:
+        bool: True if the images are considered similar, False otherwise.
+    '''
+    # Set output variable
+    similarity = False
+
+    # Open the images
+    image1 = Image.open(image_path1)
+    image2 = Image.open(image_path2)
+
+    # Resize the images to ensure they have the same dimensions
+    image1 = image1.resize(image2.size)
+
+    # Convert the images to RGB mode (if they are not already)
+    image1 = image1.convert("RGB")
+    image2 = image2.convert("RGB")
+
+    # Calculate the squared pixel difference between the images
+    diff = 0
+    for pixel1, pixel2 in zip(image1.getdata(), image2.getdata()):
+        diff += sum((p1 - p2) ** 2 for p1, p2 in zip(pixel1, pixel2))
+
+    # Calculate the root mean square difference
+    rms = (diff / float(image1.size[0] * image1.size[1])) ** 0.5
+
+    # Pictures are similar if their rms is lower than 100 
+    if (rms < 100):
+        similarity = True 
+
+    return similarity
 
 def map_config(configfile):
     """

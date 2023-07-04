@@ -12,7 +12,7 @@ Applies to company logo, company name, document font, brand colors
 import sys
 import os
 import re
-from time import time
+from time import time, strftime, gmtime
 from datetime import datetime
 from re import sub, search, findall, IGNORECASE
 from zipfile import ZipFile, ZIP_DEFLATED
@@ -707,8 +707,7 @@ def place_logo_body(file_in, file_out, config):
 
                 # Get all image locations without the header
                 image_locations = [item for item in zip_in.namelist() if '/media/' in item]
-                print('image_locations ', image_locations)
-                print('header_images_paths ', header_images_paths)
+
                 # Check that header images exist
                 if (len(header_images_paths) != 0):
                     # Remove from image_location header paths
@@ -1171,11 +1170,13 @@ def main():
 
                 # Process the file if it's not empty
                 print(f"Processing {file}")
-                if (os.path.getsize(file_in) != 0):
-                    process_file(file_in, file_out, config)
-                else:
-                    print(f"File skipped because it's empty: {file}")
-
+                try:
+                    if (os.path.getsize(file_in) != 0):
+                        process_file(file_in, file_out, config)
+                    else:
+                        print(f"File skipped because it's empty: {file}")
+                except:
+                    print(f'File failed to process! File name: {file}')
                 # End timer and output time
                 print(f"Processing took {time() - start_time:.3f} seconds")
 
@@ -1217,8 +1218,11 @@ def main():
                     continue
 
                 # Replace image inside body
-                place_logo_body(file_in, file_out, config)
-
+                print(f'Replacing body image for: {file}')
+                try:
+                    place_logo_body(file_in, file_out, config)
+                except:
+                    print(f'Failed replacing the body images for file: {file}')
                 # Remove file from headerImageReplaced folder
                 os.remove(file_in)
             
@@ -1226,7 +1230,7 @@ def main():
         if pdf_conversion:
             quit_com_servers(word, excel, power_point)
 
-        print(f"All done! \nThe script ran for {time() - script_run_time:.3f} seconds\nReplacing the files' body images took: {time() - body_image_replace:.3f} seconds")
+        print(f"All done! \nThe script ran for {strftime('%H:%M:%S', gmtime(time() - script_run_time))} seconds\nReplacing the files' body images took: {strftime('%H:%M:%S', gmtime(time() - body_image_replace))} seconds")
 
     else:
         print("Specify an existing config file")
@@ -1268,7 +1272,7 @@ def compare_images(image_path1, image_path2):
         rms = (diff / float(image1.size[0] * image1.size[1])) ** 0.5
 
         # Pictures are similar if their rms is lower than 100 
-        if (rms < 100):
+        if (rms < 50):
             similarity = True 
     except:
         print('Image format not supported.')

@@ -632,7 +632,7 @@ def place_logo_header(zip_in, zip_out, config):
     if headercount > 0:
         status = "Header Found, "
 
-    file_name = os.path.basename(zip_in.filename)
+    file_name = os.path.basename(zip_out.filename)
     header_images[file_name] = header_image_paths
 
     # Filter the file paths that are in 'word/media' 
@@ -677,6 +677,13 @@ def place_logo_header(zip_in, zip_out, config):
             
     return status, note, warning
 
+# TODO Continue testing, as it seems when handling multiple files, some images that aren't supposed to get replaced.
+#       For example the file 30F100D2-A8A6-E811-837F-0050568D9B6E.docx has its signatures replaced.
+#       TODO 
+#           - Test that the right images get compared
+#           - that the previous images get deleted
+#           - that variables are cleared before each run 
+
 def place_logo_body(file_in, file_out, config):
         file_path = file_in
         note = ''
@@ -690,7 +697,7 @@ def place_logo_body(file_in, file_out, config):
             with ZipFile(file_out, "w", ZIP_DEFLATED) as zip_out:
                 header_images_paths = header_images[new_file_path]
                 
-                # Copy contents to zip_out TODO all the contents of the zip_in
+                # Copy contents to zip_out
                 for path in zip_in.namelist():
                     if not 'media' in path:
                         file_content = zip_in.read(path)
@@ -700,10 +707,14 @@ def place_logo_body(file_in, file_out, config):
 
                 # Get all image locations without the header
                 image_locations = [item for item in zip_in.namelist() if '/media/' in item]
-
-                # Remove from image_location header paths
-                for header_image in header_images_paths:
-                    image_locations.remove(header_image)
+                print('image_locations ', image_locations)
+                print('header_images_paths ', header_images_paths)
+                # Check that header images exist
+                if (len(header_images_paths) != 0):
+                    # Remove from image_location header paths
+                    for header_image in header_images_paths:
+                        if (header_image in image_locations):
+                                image_locations.remove(header_image)
 
                 # Extract all images besides the header logo
                 zip_in.extractall(config["BetweenFolder"], members=image_locations)
@@ -711,29 +722,37 @@ def place_logo_body(file_in, file_out, config):
                 # Get all logo paths from the catalog
                 logo_locations = os.listdir(config["FoundLogosFolder"])
 
-                # Compare all images with the logo catalog
-                for image in image_locations:
-                    for logo in logo_locations:
-                        similar = compare_images(config["FoundLogosFolder"] + logo, config["BetweenFolder"] + image)
-                        
-                        # Replace image if similar
-                        if (similar):
-                            zip_image_location = f'{os.path.dirname(header_image)}/{os.path.basename(image)}'
+                # Check that there's any images
+                if (len(image_locations) != 0):
+                    # Compare all images with the logo catalog
+                    for image in image_locations:
+                        for logo in logo_locations:
+                            similar = compare_images(config["FoundLogosFolder"] + logo, config["BetweenFolder"] + image)
+                            
+                            # Replace image if similar
+                            if (similar):
+                                zip_image_location = f'{os.path.dirname(image)}/{os.path.basename(image)}'
 
-                            # Resize logo from catalog
-                            logo_replacement_path = resize_image(config['NewLogoPath'], config['ImagesFolder'], config["BetweenFolder"] + image)
+                                # Resize logo from catalog
+                                logo_replacement_path = resize_image(config['NewLogoPath'], config['ImagesFolder'], config["BetweenFolder"] + image)
 
-                            # Add similar images to zip_out
-                            zip_out.write(logo_replacement_path, zip_image_location, compress_type=ZIP_DEFLATED)
+                                # Add similar images to zip_out
+                                zip_out.write(logo_replacement_path, zip_image_location, compress_type=ZIP_DEFLATED)
 
-                            # Add note
-                            note += f'Replaced similar image at: {image} ' 
+                                # Add note
+                                note += f'Replaced similar image at: {image} ' 
 
-                zip_image_base_directory = header_image.split('/')[0] # TODO Don't use header_image, but use another image to get the base directory
+                if (len(image_locations) != 0):
+                    zip_image_base_directory = image.split('/')[0] 
+                elif(len(header_images_paths) != 0):
+                    zip_image_base_directory = header_images_paths[0].split('/')[0]
+                else:
+                    zip_image_base_directory = None
 
                 # Delete extracted images
-                if (os.path.exists(config["BetweenFolder"] + zip_image_base_directory)):
-                    shutil.rmtree(config["BetweenFolder"] + zip_image_base_directory)
+                if (zip_image_base_directory is not None):
+                    if (os.path.exists(config["BetweenFolder"] + zip_image_base_directory)):
+                        shutil.rmtree(config["BetweenFolder"] + zip_image_base_directory)
 
                 # Add missing images
                 add_missing_images(zip_in, zip_out)
@@ -1207,7 +1226,7 @@ def main():
         if pdf_conversion:
             quit_com_servers(word, excel, power_point)
 
-        print(f"All done! \nThe script ran for {time() - script_run_time:.3f} seconds\nReplacing the files' body images took: {time() - body_image_replace:.3f}")
+        print(f"All done! \nThe script ran for {time() - script_run_time:.3f} seconds\nReplacing the files' body images took: {time() - body_image_replace:.3f} seconds")
 
     else:
         print("Specify an existing config file")

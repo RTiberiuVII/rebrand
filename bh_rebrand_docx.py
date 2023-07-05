@@ -12,7 +12,7 @@ Applies to company logo, company name, document font, brand colors
 import sys
 import os
 import re
-from time import time
+from time import time, strftime, gmtime
 from datetime import datetime
 from re import sub, search, findall, IGNORECASE
 from zipfile import ZipFile, ZIP_DEFLATED
@@ -33,8 +33,8 @@ FILE_FORMAT_PDF_EXCEL = 0
 FILE_FORMAT_PDF_PPT = 2
 FILE_FORMAT_XLSX = 51
 FILE_FORMAT_DOCX = 16
-
-
+different_logos_found = 0
+header_images = {}
 
 def count_docx(file_name):
     document = Document(file_name)
@@ -101,7 +101,7 @@ def replace_text(runs, target, replace):
     return
 
 
-def docx_replace(doc, target, replace):
+def docx_replace(doc, target, replace, warning):
     try:
         # Replace text in tables
         for table in doc.tables:
@@ -158,8 +158,9 @@ def docx_replace(doc, target, replace):
             for link in paragraph._element.xpath(".//w:hyperlink"):
                 replace_text(link.xpath("w:r", namespaces=link.nsmap), target, replace)
     except IndexError:
-        log.write('File is skipped because of an indexerror.')
+        warning += 'File is skipped because of an indexerror!.'
 
+    return warning
 
 def text_rebrand(file_in, config):
     # Store file path from CL Arguments.
@@ -400,7 +401,7 @@ def try_decode(content):
     return None
 
 def resize_image(input_image_path, output_image_folder, reference_image_path):
-    """
+    '''
     Resize the input image to match the aspect ratio of the reference image, preserving the aspect ratio and avoiding stretching.
 
     Parameters:
@@ -410,40 +411,44 @@ def resize_image(input_image_path, output_image_folder, reference_image_path):
 
     Returns:
         new_image_path (str): Path to the new resized image.
-    """
-    # Open the reference image to get its aspect ratio
-    with Image.open(reference_image_path) as reference_image:
-        ref_height = reference_image.height
-        ref_width = reference_image.width
-        ref_aspect_ratio = ref_width / ref_height
+    '''
+    # Catch any unsupported images
+    try:
+        # Open the reference image to get its aspect ratio
+        with Image.open(reference_image_path) as reference_image:
+            ref_height = reference_image.height
+            ref_width = reference_image.width
+            ref_aspect_ratio = ref_width / ref_height
 
-    new_image_path = f'{output_image_folder}/resized_image_{ref_width}x{ref_height}.png'
-    if (not os.path.exists(new_image_path)):
+        new_image_path = f'{output_image_folder}/resized_image_{ref_width}x{ref_height}.png'
+        if (not os.path.exists(new_image_path)):
 
-        # Open the input image
-        with Image.open(input_image_path) as input_image:
-            # Calculate the new dimensions for the input image while maintaining aspect ratio
-            input_aspect_ratio = input_image.width / input_image.height
+            # Open the input image
+            with Image.open(input_image_path) as input_image:
+                # Calculate the new dimensions for the input image while maintaining aspect ratio
+                input_aspect_ratio = input_image.width / input_image.height
 
-            if input_aspect_ratio > ref_aspect_ratio:
-                # The input image is wider, adjust the width to match the reference aspect ratio
-                new_width = ref_width
-                new_height = int(new_width / input_aspect_ratio)
-            else:
-                # The input image is taller, adjust the height to match the reference aspect ratio
-                new_height = ref_height
-                new_width = int(new_height * input_aspect_ratio)
+                if input_aspect_ratio > ref_aspect_ratio:
+                    # The input image is wider, adjust the width to match the reference aspect ratio
+                    new_width = ref_width
+                    new_height = int(new_width / input_aspect_ratio)
+                else:
+                    # The input image is taller, adjust the height to match the reference aspect ratio
+                    new_height = ref_height
+                    new_width = int(new_height * input_aspect_ratio)
 
-            # Resize the input image with aspect ratio preserved
-            resized_image = input_image.resize((new_width, new_height))
+                # Resize the input image with aspect ratio preserved
+                resized_image = input_image.resize((new_width, new_height))
 
-            # Create a blank image with the reference aspect ratio and paste the resized image onto it
-            result_image = Image.new("RGB", (ref_width, ref_height), (46, 46, 46))
-            offset = ((ref_width - new_width) // 2, (ref_height - new_height) // 2)
-            result_image.paste(resized_image, offset)
+                # Create a blank image with the reference aspect ratio and paste the resized image onto it
+                result_image = Image.new("RGB", (ref_width, ref_height), (46, 46, 46))
+                offset = ((ref_width - new_width) // 2, (ref_height - new_height) // 2)
+                result_image.paste(resized_image, offset)
 
-            # Save the resized image
-            result_image.save(new_image_path)
+                # Save the resized image
+                result_image.save(new_image_path)
+    except:
+        new_image_path = ''
 
     return new_image_path
     
@@ -469,8 +474,12 @@ def replace_header_images(zip_in, zip_out, config, note):
 
     warning: string
         warning if multiple header images have been replaced
+
+    images_replaced_path: string array
+        paths to the images replaced
     '''
     warning = ""
+    images_replaced_path = []
     # Check every filename for header --> can contain information about images in the header
     # Possible filenames: header2.xml.rels, header3.xml.rels
     for file in zip_in.namelist():
@@ -479,9 +488,9 @@ def replace_header_images(zip_in, zip_out, config, note):
             # Disable error from using \S\s in a binary string which is needed for regex
             # Get every target image
             image_locations = findall(b'Target="media[\S\s]*?"', zip_in.read(file))
-            print('image_locations', image_locations)
+            # print('image_locations', image_locations) # FOR TESTING - DELETE AFTER
             if len(image_locations) > 1:
-                print(">>Changing multiple header images!")
+                # print(">>Changing multiple header images!") # FOR TESTING - DELETE AFTER
                 warning = "Warning: Multiple images found in header"
             for image_location in image_locations:
                 image_location = image_location[image_location.find(b"media"):-1].decode("ascii")
@@ -493,6 +502,9 @@ def replace_header_images(zip_in, zip_out, config, note):
                         continue
 
                     header_image_path = f"{config['filetype']}/{image_location}"
+                    
+                    # Add replaced image path for output
+                    images_replaced_path.append(header_image_path)
 
                     # Etract image from the zip object
                     zip_image_location = 'word/' + image_location
@@ -505,7 +517,7 @@ def replace_header_images(zip_in, zip_out, config, note):
                     os.remove(config['ImagesFolder'] + zip_image_location)
                     
                     if not header_image_path in zip_out.namelist():
-                        print(f"Replaced header image at {header_image_path}")
+                        print(f"Replaced header image at {header_image_path}") # FOR TESTING - DELETE AFTER
                         zip_out.write(new_image_path, header_image_path)
                         note += f"Replaced header image {header_image_path},"
                 except KeyError:
@@ -519,7 +531,7 @@ def replace_header_images(zip_in, zip_out, config, note):
                                 note += f"Replaced header image {location},"
                             break
 
-    return note, warning
+    return note, warning, images_replaced_path
 
 
 def check_header_images(zip_in, config, note):
@@ -575,7 +587,7 @@ def check_header_images(zip_in, config, note):
     return note
 
 
-def place_logo(zip_in, zip_out, config):
+def place_logo_header(zip_in, zip_out, config):
     '''
     Places the new BH logo in the word document
 
@@ -601,154 +613,151 @@ def place_logo(zip_in, zip_out, config):
     warning: string
         warning if multiple header images have been replaced
     '''
-    namelist = zip_in.namelist()
+    global different_logos_found
     status = "LogoNotFound"
     note = ""
     warning = ""
     headercount = 0
-    imagecount = 0
+    header_image_paths = []
 
-    # Check expected logo path and logo size
-    '''
-    if config["OldLogoPath_formatted"] in namelist:
-        if zip_in.getinfo(config["OldLogoPath_formatted"]).file_size == int(config["OldLogoSize"]):
-            # Found image at expected path with expected size -> copy new logo
-            print("Logo found at expected location")
-            'zip_out.write(config["NewLogoPath"], config["OldLogoPath_formatted"])'
-            status = "OK"
-
+    # Check if every image in the header should be replaced
+    if "true" in config["ReplaceHeaderImage"].lower():
+        note, warning, header_image_paths = replace_header_images(zip_in, zip_out, config, note)
     else:
-        print("Logo not in expected location")
-    
-    '''
-    for file in zip_in.namelist():
-        if "header" in file and "rel" in file:
-            # pylint: disable=W1401
-            # Disable error from using \S\s in a binary string which is needed for regex
-            # Get every target image
-            headercount += 1
-            image_locations = findall(b'Target="media[\S\s]*?"', zip_in.read(file))
-            for image_location in image_locations:
-                imagecount += 1
-                image_location = image_location[image_location.find(
-                    b"media"):-1].decode("ascii")
-                # Format image_location to the full path
-                try:
-                    image_location = f'{config["filetype"]}/{image_location}'
-                except KeyError:
-                    # filetype not in config; cant automatically create full image path
-                    # Check every location to get the full path
-                    for path in zip_in.namelist():
-                        if image_location in path:
-                            image_location = path
-                            break
-
+        note = check_header_images(zip_in, config, note)
+        
     if headercount == 0:
         status = "No Header"
 
     if headercount > 0:
         status = "Header Found, "
 
-    if imagecount == 1:
-        status += "Single Header Image, "
-        if image_location in namelist:
-            if zip_in.getinfo(image_location).file_size == int(7093) \
-                    or zip_in.getinfo(image_location).file_size == int(8362) \
-                    or zip_in.getinfo(image_location).file_size == int(1395) \
-                    or zip_in.getinfo(image_location).file_size == int(5184):
-                # Found image at expected path with expected size -> copy new logo
-                # print("Logo found at expected location")
-                'zip_out.write(config["NewLogoPath"], config["OldLogoPath_formatted"])'
-                status += "Legacy BH Logo"
-            elif zip_in.getinfo(image_location).file_size == int(config["OldLogoSize"]) \
-                    or zip_in.getinfo(image_location).file_size == int(29004):
-                # Found image at expected path with expected size -> copy new logo
-                # print("Logo found at expected location")
-                'zip_out.write(config["NewLogoPath"], config["OldLogoPath_formatted"])'
-                status += "GE Logo"
-            elif zip_in.getinfo(image_location).file_size == int(35408) \
-                    or zip_in.getinfo(image_location).file_size == int(8962) \
-                            or zip_in.getinfo(image_location).file_size == int(119089) \
-                            or zip_in.getinfo(image_location).file_size == int(65326) \
-                            or zip_in.getinfo(image_location).file_size == int(47759):
-                # Found image at expected path with new logo size
-                'zip_out.write(config["NewLogoPath"], config["OldLogoPath_formatted"])'
-                status += "Rebrand Logo"
-            else:
-                # Found image at expected path with new logo size
-                zip_out.write(config["NewLogoPath"], config["OldLogoPath_formatted"])
-                status += "Unknown Logo"
+    file_name = os.path.basename(zip_out.filename)
+    header_images[file_name] = header_image_paths
 
-    if imagecount > 1:
-        status += str(imagecount) + " Header Images, "
-        multicount = 0
-        for file in zip_in.namelist():
-            if "header" in file and "rel" in file:
-                image_locations = findall(b'Target="media[\S\s]*?"', zip_in.read(file))
-                for image_location in image_locations:
-                    multicount += 1
-                    # status += str(multicount) + ", "
-                    multi_image_location = image_location[image_location.find(
-                        b"media"):-1].decode("ascii")
-                    multi_image_location = f'{config["filetype"]}/{multi_image_location}'
-                    if zip_in.getinfo(multi_image_location).file_size == int(7093) \
-                            or zip_in.getinfo(multi_image_location).file_size == int(8362) \
-                            or zip_in.getinfo(multi_image_location).file_size == int(1395) \
-                            or zip_in.getinfo(multi_image_location).file_size == int(5184):
-                        # Found image at expected path with expected size -> copy new logo
-                        # print("Logo found at expected location")
-                        'zip_out.write(config["NewLogoPath"], config["OldLogoPath_formatted"])'
-                        status += "(" + str(multicount) + ") Legacy BH Logo, "
-                    elif zip_in.getinfo(multi_image_location).file_size == int(config["OldLogoSize"]) \
-                            or zip_in.getinfo(multi_image_location).file_size == int(29004):
-                        # Found image at expected path with expected size -> copy new logo
-                        # print("Logo found at expected location")
-                        'zip_out.write(config["NewLogoPath"], config["OldLogoPath_formatted"])'
-                        status += "(" + str(multicount) + ") GE Logo, "
-                    elif zip_in.getinfo(multi_image_location).file_size == int(35408) \
-                            or zip_in.getinfo(multi_image_location).file_size == int(8962) \
-                            or zip_in.getinfo(multi_image_location).file_size == int(119089) \
-                            or zip_in.getinfo(multi_image_location).file_size == int(65326) \
-                            or zip_in.getinfo(multi_image_location).file_size == int(47759):
-                        # Found image at expected path with new logo size
-                        'zip_out.write(config["NewLogoPath"], config["OldLogoPath_formatted"])'
-                        status += "(" + str(multicount) + ") Rebrand Logo, "
-                    else:
-                        # Found image at expected path with new logo size
-                        'zip_out.write(config["NewLogoPath"], config["OldLogoPath_formatted"])'
-                        status += "(" + str(multicount) + ") Unknown Logo, "
+    # Filter the file paths that are in 'word/media' 
+    files_in_folder = [name for name in zip_in.namelist() if name.startswith('word/media')]
 
-    # Check if every image in the header should be replaced
-    if "true" in config["ReplaceHeaderImage"].lower():
-        note, warning = replace_header_images(zip_in, zip_out, config, note)
-    else:
-        note = check_header_images(zip_in, config, note)
-    # Copy the rest of the images
+    # Get the number of files in the 'word/media' folder
+    num_files = len(files_in_folder)
 
-    for path in namelist:
-        if "media" in path:
-            # Check for potential logo
-            if (status == "LogoNotFound" and
-                zip_in.getinfo(path).file_size == int(config["OldLogoSize"])):
-                print(f"Replacing potential logo found at {path}")
-                status = "LogoFoundInOtherPath"
-                note += f'Found alternative logo in {path} with {config["OldLogoSize"]},'
-            '''            
-            if (status == "LogoNotFound" and
-                zip_in.getinfo(path).file_size == int(config["OldLogoSize"])):
-                if path not in zip_out.namelist():
-                    # Potential logo found and logo was not at expected path -> copy new logo
-                    print(f"Replacing potential logo found at {path}")
-                    'zip_out.write(config["NewLogoPath"], path)'
-                    status = "LogoFoundInOtherPath"
-                    note += f'Found alternative logo in {path} with {config["OldLogoSize"]},'
-            else:
-                # Copy other images if they havent been copied
-                if not path in zip_out.namelist():
-                    'zip_out.writestr(path, zip_in.read(path))'
-            '''
+    # Add header image(s) to the catalog (if they're unique)
+    if(config['CompareLogoByPixels'] and num_files > 0):
+
+        for image_location in header_images[file_name]:
+            # Extract header image
+            zip_in.extract(image_location, path=config["BetweenFolder"])
+            file_extension = os.path.splitext(config["BetweenFolder"] + image_location)[1]
+            logo_is_present = False
+
+            # Get all logo paths from the catalog
+            logo_locations = os.listdir(config["FoundLogosFolder"])
+
+            # Cycle through the entire catalog and check if header image is already present
+            for logo in logo_locations:
+                # Compare header image with logo
+                logo_is_present = compare_images(config["BetweenFolder"] + image_location, config["FoundLogosFolder"] + logo)
+
+                if (logo_is_present):
+                    break;
+
+            # Add image to the logo catalog folder
+            if(not logo_is_present):
+                different_logos_found += 1
+                renamed_path = f'{config["BetweenFolder"]}{os.path.dirname(image_location)}/logo_{different_logos_found}{file_extension}'
+                os.rename(config["BetweenFolder"] + image_location, renamed_path)
+                shutil.move(renamed_path, config["FoundLogosFolder"])
+
+            # Remove zip images empty base directory
+            zip_image_base_directory = image_location.split('/')[0]
+            shutil.rmtree(config["BetweenFolder"] + zip_image_base_directory)
+
+    
+
+            
     return status, note, warning
 
+# TODO Continue testing, as it seems when handling multiple files, some images that aren't supposed to get replaced.
+#       For example the file 30F100D2-A8A6-E811-837F-0050568D9B6E.docx has its signatures replaced.
+#       TODO 
+#           - Test that the right images get compared
+#           - that the previous images get deleted
+#           - that variables are cleared before each run 
+
+def place_logo_body(file_in, file_out, config):
+        file_path = file_in
+        note = ''
+
+        doc = Document(file_path)
+        new_file_path = os.path.basename(file_path)
+        doc.save((config["BetweenFolder"]) + new_file_path)
+
+        # Open input document and new document
+        with ZipFile(open((config["BetweenFolder"]) + new_file_path, "rb")) as zip_in:
+            with ZipFile(file_out, "w", ZIP_DEFLATED) as zip_out:
+                header_images_paths = header_images[new_file_path]
+                
+                # Copy contents to zip_out
+                for path in zip_in.namelist():
+                    if not 'media' in path:
+                        file_content = zip_in.read(path)
+
+                        # Copy file into new document
+                        zip_out.writestr(path, file_content)
+
+                # Get all image locations without the header
+                image_locations = [item for item in zip_in.namelist() if '/media/' in item]
+
+                # Check that header images exist
+                if (len(header_images_paths) != 0):
+                    # Remove from image_location header paths
+                    for header_image in header_images_paths:
+                        if (header_image in image_locations):
+                                image_locations.remove(header_image)
+
+                # Extract all images besides the header logo
+                zip_in.extractall(config["BetweenFolder"], members=image_locations)
+
+                # Get all logo paths from the catalog
+                logo_locations = os.listdir(config["FoundLogosFolder"])
+
+                # Check that there's any images
+                if (len(image_locations) != 0):
+                    # Compare all images with the logo catalog
+                    for image in image_locations:
+                        for logo in logo_locations:
+                            similar = compare_images(config["FoundLogosFolder"] + logo, config["BetweenFolder"] + image)
+                            
+                            # Replace image if similar
+                            if (similar):
+                                zip_image_location = f'{os.path.dirname(image)}/{os.path.basename(image)}'
+
+                                # Resize logo from catalog
+                                logo_replacement_path = resize_image(config['NewLogoPath'], config['ImagesFolder'], config["BetweenFolder"] + image)
+
+                                # Add similar images to zip_out
+                                zip_out.write(logo_replacement_path, zip_image_location, compress_type=ZIP_DEFLATED)
+
+                                # Add note
+                                note += f'Replaced similar image at: {image} ' 
+
+                if (len(image_locations) != 0):
+                    zip_image_base_directory = image.split('/')[0] 
+                elif(len(header_images_paths) != 0):
+                    zip_image_base_directory = header_images_paths[0].split('/')[0]
+                else:
+                    zip_image_base_directory = None
+
+                # Delete extracted images
+                if (zip_image_base_directory is not None):
+                    if (os.path.exists(config["BetweenFolder"] + zip_image_base_directory)):
+                        shutil.rmtree(config["BetweenFolder"] + zip_image_base_directory)
+
+                # Add missing images
+                add_missing_images(zip_in, zip_out)
+
+        # Remove file from betweenFolder
+        os.remove((config["BetweenFolder"]) + new_file_path)
 
 def get_filetype(file, config):
     '''
@@ -904,6 +913,10 @@ def convert_to_pdf(file_in, config, word, excel, power_point):
 def process_file_word(file_in, file_out, config):
     file_path = file_in
 
+    # log variables
+    text_note = ''
+    status, note, warning = '', '', ''
+
     # Convert file to docx if it ends in doc
     if file_path.endswith('.doc'):
         # Convert .doc file to .docx format and update file_path
@@ -913,7 +926,7 @@ def process_file_word(file_in, file_out, config):
     doc = Document(file_path)
     prop = doc.core_properties
     for replace_duo in config["ReplaceString"]:
-        docx_replace(doc, replace_duo[0], replace_duo[1])
+        warning =  docx_replace(doc, replace_duo[0], replace_duo[1],  warning)
         prop.title = prop.title.replace(replace_duo[0], replace_duo[1])
 
     new_file_path = os.path.basename(file_path)
@@ -921,16 +934,11 @@ def process_file_word(file_in, file_out, config):
 
     # Open input document and new document
     with ZipFile(open((config["BetweenFolder"]) + new_file_path, "rb")) as zip_in:
-        # copy document and replace content
-        text_note = ''
-        # check for logo
-        status, note, warning = '', '', ''
-
         with ZipFile(file_out, "w", ZIP_DEFLATED) as zip_out:
             # copy document and replace content
             copy_and_replace(zip_in, zip_out, config)
             # check for logo
-            status, note, warning = place_logo(zip_in, zip_out, config)
+            status, note, warning = place_logo_header(zip_in, zip_out, config)
             # Add missing images
             add_missing_images(zip_in, zip_out)
 
@@ -991,7 +999,6 @@ def process_file(file_in, file_out, config):
         case '.pdf':
             process_file_pdf(file_in, file_out, config)
 
-
 def add_missing_images(zip_in, zip_out):
     """
     Adds missing images from one Zip archive to another.
@@ -1022,14 +1029,14 @@ def convert_file(file, new_file_format):
     file_app = None
     extension = None
     opened_file = None
-    if new_file_format == 16:
+    if new_file_format == FILE_FORMAT_DOCX:
         file_app = win32.gencache.EnsureDispatch('Word.Application')
         extension = '.docx'
 
         # Open the .doc file
         opened_file = file_app.Documents.Open(file)
 
-    elif new_file_format == 51:
+    elif new_file_format == FILE_FORMAT_XLSX:
         file_app = win32.gencache.EnsureDispatch('Excel.Application')
         extension = '.xlsx'
 
@@ -1081,7 +1088,7 @@ def prepare_log(config):
     log = open(log_path, "w+", encoding="utf-8")
 
     log.write("sep=;\n")
-    log.write("Inputfile;Logo;Notes;LegacyText\n")
+    log.write("Inputfile;Logo;Notes;LegacyText;Warning\n")
 
     print(f"Logging in file {log_name}")
     return log
@@ -1091,6 +1098,7 @@ def main():
     '''
     Starts processing of files and conversion to PDF
     '''
+    script_run_time = time()
     if len(sys.argv) == 2:
         # Put elements of config file into a dictionary
         config = map_config(sys.argv[1])
@@ -1125,6 +1133,12 @@ def main():
             global log;
             log = prepare_log(config)
 
+            # Decide on output folder
+            if(config["CompareLogoByPixels"]):
+                output_folder = config["HeaderImageReplacedFoler"]
+            else: 
+                output_folder = config["OutputFolder"]
+
             # Loop over every file in the directory
             for file in os.listdir(config["InputFolder"]):
                 # Start timer
@@ -1132,7 +1146,7 @@ def main():
 
                 # Create input and output path and start file processing
                 file_in = os.path.join(config["InputFolder"], file)
-                file_out = os.path.join(config["OutputFolder"], file)
+                file_out = os.path.join(output_folder, file)
 
                 # Check if current file is a path to a folder
                 if os.path.isdir(file_in):
@@ -1156,11 +1170,13 @@ def main():
 
                 # Process the file if it's not empty
                 print(f"Processing {file}")
-                if (os.path.getsize(file_in) != 0):
-                    process_file(file_in, file_out, config)
-                else:
-                    print(f"File skipped because it's empty: {file}")
-
+                try:
+                    if (os.path.getsize(file_in) != 0):
+                        process_file(file_in, file_out, config)
+                    else:
+                        print(f"File skipped because it's empty: {file}")
+                except:
+                    print(f'File failed to process! File name: {file}')
                 # End timer and output time
                 print(f"Processing took {time() - start_time:.3f} seconds")
 
@@ -1171,28 +1187,98 @@ def main():
 
                     # Convert file using COM server
                     print(f"Converting {file} to PDF")
-                    config["PDFPath"] = os.path.join(config["OutputFolder"],
+                    config["PDFPath"] = os.path.join(output_folder,
                                                      file[0:file.rfind(".")] + ".pdf")
 
                     # Convert the file to pdf
                     convert_to_pdf(file_out, config, word, excel, power_point)
-
 
                     # End timer and output time
                     print(f"Converting took {time() - start_converting_time:.3f} seconds")
             log.close()
         else:
             print("Specify an existing input folder containing the documents and an output folder")
+        
+        # Loop through all the files, replacing any image inside of the file's body that matches any logo in the catalog
+        if(config["CompareLogoByPixels"]):
+            body_image_replace = time()
+            # Loop over every file in the directory
+            for file in os.listdir(config["HeaderImageReplacedFoler"]):
+                # Create input and output path and start file processing
+                file_in = os.path.join(config["HeaderImageReplacedFoler"], file)
+                file_out = os.path.join(config["OutputFolder"], file)
 
+                # Get the current filetype
+                config = get_filetype(file, config)
+
+                # Check if filetype is supported
+                if "filetype" not in config:
+                    print(f"Filetype of {file} not supported")
+                    log.write(f"{file_in};-;Filetype not supported\n")
+                    continue
+
+                # Replace image inside body
+                print(f'Replacing body image for: {file}')
+                try:
+                    place_logo_body(file_in, file_out, config)
+                except:
+                    print(f'Failed replacing the body images for file: {file}')
+                # Remove file from headerImageReplaced folder
+                os.remove(file_in)
+            
         # Close COM Server
         if pdf_conversion:
             quit_com_servers(word, excel, power_point)
 
-        print("All done")
+        print(f"All done! \nThe script ran for {strftime('%H:%M:%S', gmtime(time() - script_run_time))} seconds\nReplacing the files' body images took: {strftime('%H:%M:%S', gmtime(time() - body_image_replace))} seconds")
 
     else:
         print("Specify an existing config file")
+    
 
+def compare_images(image_path1, image_path2):
+    """
+    Compare two images based on their pixel values and determine their similarity.
+
+    Args:
+        image_path1 (str): File path of the first image.
+        image_path2 (str): File path of the second image.
+
+    Returns:
+        bool: True if the images are considered similar, False otherwise.
+    """
+    # Set output variable
+    similarity = False
+
+    # Catch any unsupported image files
+    try:
+        # Open the images
+        image1 = Image.open(image_path1)
+        image2 = Image.open(image_path2)
+
+        # Resize the images to ensure they have the same dimensions
+        image1 = image1.resize(image2.size)
+
+        # Convert the images to RGB mode (if they are not already)
+        image1 = image1.convert("RGB")
+        image2 = image2.convert("RGB")
+
+        # Calculate the squared pixel difference between the images
+        diff = 0
+        for pixel1, pixel2 in zip(image1.getdata(), image2.getdata()):
+            diff += sum((p1 - p2) ** 2 for p1, p2 in zip(pixel1, pixel2))
+
+        # Calculate the root mean square difference
+        rms = (diff / float(image1.size[0] * image1.size[1])) ** 0.5
+
+        # Pictures are similar if their rms is lower than 100 
+        if (rms < 50):
+            similarity = True 
+    except:
+        print('Image format not supported.')
+        similarity = False
+
+    return similarity
 
 def map_config(configfile):
     """

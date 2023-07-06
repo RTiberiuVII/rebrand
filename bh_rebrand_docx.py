@@ -27,6 +27,7 @@ import shutil
 import openpyxl
 import pathlib
 from PIL import Image, ImageOps
+import numpy as np
 
 FILE_FORMAT_PDF_WORD = 17
 FILE_FORMAT_PDF_EXCEL = 0
@@ -34,6 +35,7 @@ FILE_FORMAT_PDF_PPT = 2
 FILE_FORMAT_XLSX = 51
 FILE_FORMAT_DOCX = 16
 different_logos_found = 0
+image_comparisons = 0
 header_images = {}
 
 def count_docx(file_name):
@@ -517,7 +519,6 @@ def replace_header_images(zip_in, zip_out, config, note):
                     os.remove(config['ImagesFolder'] + zip_image_location)
                     
                     if not header_image_path in zip_out.namelist():
-                        print(f"Replaced header image at {header_image_path}") # FOR TESTING - DELETE AFTER
                         zip_out.write(new_image_path, header_image_path)
                         note += f"Replaced header image {header_image_path},"
                 except KeyError:
@@ -676,13 +677,6 @@ def place_logo_header(zip_in, zip_out, config):
 
             
     return status, note, warning
-
-# TODO Continue testing, as it seems when handling multiple files, some images that aren't supposed to get replaced.
-#       For example the file 30F100D2-A8A6-E811-837F-0050568D9B6E.docx has its signatures replaced.
-#       TODO 
-#           - Test that the right images get compared
-#           - that the previous images get deleted
-#           - that variables are cleared before each run 
 
 def place_logo_body(file_in, file_out, config):
         file_path = file_in
@@ -1103,6 +1097,9 @@ def main():
         # Put elements of config file into a dictionary
         config = map_config(sys.argv[1])
 
+        # Clean the project before starting (used for testing)
+        delete_all_contents(config) 
+
         # Check PDF conversion
         pdf_conversion = False
         if "true" in config["PDF"].lower():
@@ -1139,8 +1136,11 @@ def main():
             else: 
                 output_folder = config["OutputFolder"]
 
+            # Get total file count
+            file_count = len(os.listdir(config['InputFolder']))
+
             # Loop over every file in the directory
-            for file in os.listdir(config["InputFolder"]):
+            for file_number, file  in enumerate(os.listdir(config["InputFolder"])):
                 # Start timer
                 start_time = time()
 
@@ -1169,7 +1169,7 @@ def main():
                     filetype = config["filetype"])
 
                 # Process the file if it's not empty
-                print(f"Processing {file}")
+                print(f"File {file_number}/{file_count} -- Processing {file}")
                 try:
                     if (os.path.getsize(file_in) != 0):
                         process_file(file_in, file_out, config)
@@ -1203,7 +1203,7 @@ def main():
         if(config["CompareLogoByPixels"]):
             body_image_replace = time()
             # Loop over every file in the directory
-            for file in os.listdir(config["HeaderImageReplacedFoler"]):
+            for file_number_body, file in enumerate(os.listdir(config["HeaderImageReplacedFoler"])):
                 # Create input and output path and start file processing
                 file_in = os.path.join(config["HeaderImageReplacedFoler"], file)
                 file_out = os.path.join(config["OutputFolder"], file)
@@ -1218,11 +1218,11 @@ def main():
                     continue
 
                 # Replace image inside body
-                print(f'Replacing body image for: {file}')
+                print(f'File {file_number_body}/{file_count} -- Replacing body image for: {file}')
                 try:
                     place_logo_body(file_in, file_out, config)
-                except:
-                    print(f'Failed replacing the body images for file: {file}')
+                except Exception as e:
+                    print(f'Failed replacing the body images for file: {file} \n Error: {e}')
                 # Remove file from headerImageReplaced folder
                 os.remove(file_in)
             
@@ -1230,7 +1230,7 @@ def main():
         if pdf_conversion:
             quit_com_servers(word, excel, power_point)
 
-        print(f"All done! \nThe script ran for {strftime('%H:%M:%S', gmtime(time() - script_run_time))} seconds\nReplacing the files' body images took: {strftime('%H:%M:%S', gmtime(time() - body_image_replace))} seconds")
+        print(f"All done! \nThe script ran for {strftime('%H:%M:%S', gmtime(time() - script_run_time))} seconds\nReplacing the files' body images took: {strftime('%H:%M:%S', gmtime(time() - body_image_replace))} seconds\nTotal image comparisons: {image_comparisons:,}")
 
     else:
         print("Specify an existing config file")
@@ -1249,6 +1249,7 @@ def compare_images(image_path1, image_path2):
     """
     # Set output variable
     similarity = False
+    global image_comparisons
 
     # Catch any unsupported image files
     try:
@@ -1263,20 +1264,20 @@ def compare_images(image_path1, image_path2):
         image1 = image1.convert("RGB")
         image2 = image2.convert("RGB")
 
-        # Calculate the squared pixel difference between the images
-        diff = 0
-        for pixel1, pixel2 in zip(image1.getdata(), image2.getdata()):
-            diff += sum((p1 - p2) ** 2 for p1, p2 in zip(pixel1, pixel2))
+        # Convert images to NumPy arrays
+        image1_array = np.asarray(image1)
+        image2_array = np.asarray(image2)
 
-        # Calculate the root mean square difference
-        rms = (diff / float(image1.size[0] * image1.size[1])) ** 0.5
+        # Calculate deviation
+        deviation = np.mean(np.abs(image1_array - image2_array))
 
-        # Pictures are similar if their rms is lower than 100 
-        if (rms < 50):
-            similarity = True 
-    except:
-        print('Image format not supported.')
-        similarity = False
+        # Pictures are similar if their deviation is lower than 30 
+        similarity = deviation < 25
+
+        # Increment counter
+        image_comparisons += 1
+    except Exception as e:
+        print('Image format not supported: ', str(e))
 
     return similarity
 
@@ -1319,6 +1320,43 @@ def map_config(configfile):
                     cfg_dict["ReplaceString"].append([old.strip(), new.strip()])
 
     return cfg_dict
+
+def delete_folder_contents(folder_path):
+    """
+    Delete all files within a folder.
+
+    Args:
+        folder_path (str): Path to the folder.
+
+    Returns:
+        None
+    """
+    for file_name in os.listdir(folder_path):
+        file_path = os.path.join(folder_path, file_name)
+        if os.path.isfile(file_path):
+            os.remove(file_path)
+
+def delete_all_contents(config):
+    """
+    Delete all file contents from the specified folders.
+
+    Args:
+        config (dict): Dictionary containing the folder paths.
+
+    Returns:
+        None
+    """
+    folders = [
+        config['BetweenFolder'],
+        config['HeaderImageReplacedFoler'],
+        # config['FoundLogosFolder'],
+        config['ImagesFolder'],
+        config['OutputFolder']
+    ]
+
+    for folder in folders:
+        delete_folder_contents(folder)
+
 
 
 if __name__ == "__main__":

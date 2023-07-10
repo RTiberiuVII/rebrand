@@ -909,17 +909,20 @@ def convert_to_pdf(file_in, config, word, excel, power_point):
 
 def process_file_word(file_in, file_out, config):
     file_path = file_in
+    file_out_path = file_out
 
     # log variables
     text_note = ''
     status, note, warning = '', '', ''
 
     # Convert file to docx if it ends in doc
-    if file_path.endswith('.doc'):
+    if file_path.endswith('.doc') or file_path.endswith('.docm'):
         # Convert .doc file to .docx format and update file_path
         file_path = convert_file(file_path, FILE_FORMAT_DOCX)
-    
-    
+
+        # Update file_out_path to contain the new extension
+        file_out_path = f'{os.path.dirname(file_out)}\{os.path.basename(file_path)}'
+
     doc = Document(file_path)
     prop = doc.core_properties
     for replace_duo in config["ReplaceString"]:
@@ -931,7 +934,7 @@ def process_file_word(file_in, file_out, config):
 
     # Open input document and new document
     with ZipFile(open((config["BetweenFolder"]) + new_file_path, "rb")) as zip_in:
-        with ZipFile(file_out, "w", ZIP_DEFLATED) as zip_out:
+        with ZipFile(file_out_path, "w", ZIP_DEFLATED) as zip_out:
             # copy document and replace content
             copy_and_replace(zip_in, zip_out, config)
             # check for logo
@@ -987,7 +990,7 @@ def process_file(file_in, file_out, config):
     '''
     file_extension = pathlib.Path(file_in).suffix
     match file_extension:
-        case '.doc' | '.docx':
+        case '.doc' | '.docx' | '.docm':
             process_file_word(file_in, file_out, config)
         case '.xlsx' | '.xls':
             process_file_excel(file_in, file_out, config)
@@ -1208,27 +1211,28 @@ def main():
         if(config["CompareLogoByPixels"]):
             body_image_replace = time()
             # Loop over every file in the directory
-            for file_number_body, file in enumerate(os.listdir(config["HeaderImageReplacedFoler"])):
+            for file_number_body, file_body in enumerate(os.listdir(config["HeaderImageReplacedFoler"])):
+                print('Processing file body: ', file_body)
                 # Create input and output path and start file processing
-                file_in = os.path.join(config["HeaderImageReplacedFoler"], file)
-                file_out = os.path.join(config["OutputFolder"], file)
+                file_in = os.path.join(config["HeaderImageReplacedFoler"], file_body)
+                file_out = os.path.join(config["OutputFolder"], file_body)
 
                 # Get the current filetype
-                config = get_filetype(file, config)
+                config = get_filetype(file_body, config)
 
                 # Check if filetype is supported
                 if "filetype" not in config:
-                    print(f"Filetype of {file} not supported")
+                    print(f"Filetype of {file_body} not supported")
                     log.write(f"{file_in};-;Filetype not supported\n")
                     continue
 
                 # Replace image inside body
-                print(f'File {file_number_body}/{file_count} -- Replacing body image for: {file}')
+                print(f'File {file_number_body}/{file_count} -- Replacing body image for: {file_body}')
                 try:
                     place_logo_body(file_in, file_out, config)
                 except Exception as e:
-                    print(f'Failed replacing the body images for file: {file} \nError: {e}')
-                
+                    print(f'Failed replacing the body images for file: {file_body} \nError: {e}')
+                    log.write(f"{file_in};-;Failed replacing the body images!;Error:{e}\n")
                 # Remove file from headerImageReplaced folder
                 os.remove(file_in)
             

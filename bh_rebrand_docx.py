@@ -660,7 +660,7 @@ def place_logo_header(zip_in, zip_out, config):
                 logo_is_present = compare_images(config["BetweenFolder"] + image_location, config["FoundLogosFolder"] + logo)
 
                 if (logo_is_present):
-                    break;
+                    break
 
             # Add image to the logo catalog folder
             if(not logo_is_present):
@@ -682,6 +682,7 @@ def place_logo_body(file_in, file_out, config):
         file_path = file_in
         note = ''
 
+        print('file path: ', file_path)
         doc = Document(file_path)
         new_file_path = os.path.basename(file_path)
         doc.save((config["BetweenFolder"]) + new_file_path)
@@ -734,6 +735,8 @@ def place_logo_body(file_in, file_out, config):
 
                                 # Add note
                                 note += f'Replaced similar image at: {image} ' 
+
+                                break
 
                 if (len(image_locations) != 0):
                     zip_image_base_directory = image.split('/')[0] 
@@ -1175,8 +1178,10 @@ def main():
                         process_file(file_in, file_out, config)
                     else:
                         print(f"File skipped because it's empty: {file}")
-                except:
+                        log.write(f"{file_in};-;File skipped because it's empty!\n")
+                except Exception as e:
                     print(f'File failed to process! File name: {file}')
+                    log.write(f"{file_in};-;File failed to process!;Error:{e}\n")
                 # End timer and output time
                 print(f"Processing took {time() - start_time:.3f} seconds")
 
@@ -1222,7 +1227,8 @@ def main():
                 try:
                     place_logo_body(file_in, file_out, config)
                 except Exception as e:
-                    print(f'Failed replacing the body images for file: {file} \n Error: {e}')
+                    print(f'Failed replacing the body images for file: {file} \nError: {e}')
+                
                 # Remove file from headerImageReplaced folder
                 os.remove(file_in)
             
@@ -1271,8 +1277,8 @@ def compare_images(image_path1, image_path2):
         # Calculate deviation
         deviation = np.mean(np.abs(image1_array - image2_array))
 
-        # Pictures are similar if their deviation is lower than 30 
-        similarity = deviation < 25
+        # Pictures are similar if their deviation is lower than 17 
+        similarity = deviation < 10
 
         # Increment counter
         image_comparisons += 1

@@ -682,7 +682,6 @@ def place_logo_body(file_in, file_out, config):
         file_path = file_in
         note = ''
 
-        print('file path: ', file_path)
         doc = Document(file_path)
         new_file_path = os.path.basename(file_path)
         doc.save((config["BetweenFolder"]) + new_file_path)

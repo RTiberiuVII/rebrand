@@ -25,6 +25,9 @@ import xml.etree.ElementTree as ET
 import win32com.client as win32
 import shutil
 import openpyxl
+from openpyxl.drawing.image import Image as xlsxImage
+from openpyxl.drawing.spreadsheet_drawing import SpreadsheetDrawing
+import xlrd
 import pathlib
 from PIL import Image, ImageOps
 import numpy as np
@@ -372,22 +375,6 @@ def copy_and_replace(zip_in, zip_out, config):
         # Check if the path is not in the media folder
         if not "media" in path:
             file_content = zip_in.read(path)
-            decoded_content = try_decode(file_content)
-            # Replace specified content
-            for replace_duo in config["ReplaceString"]:
-                # test = file_content.find(replace_duo[0])
-                    # findall(replace_duo[0], file_content)
-                # print(test)
-                #if findall(replace_duo[0], file_content):
-                # if replace_duo[0] in file_content:
-                if search(replace_duo[0], decoded_content):
-                    textnote += f"Legacy TextObject Found: {replace_duo[0]} in {path}, "
-                '''
-                if replace_duo[1] in config["case-unsensitive"]:
-                    file_content = sub(replace_duo[0], replace_duo[1], file_content, flags=IGNORECASE)
-                else:
-                    file_content = sub(replace_duo[0], replace_duo[1], file_content)
-                '''
             # Copy file into new document
             zip_out.writestr(path, file_content)
     return textnote
@@ -679,17 +666,23 @@ def place_logo_header(zip_in, zip_out, config):
     return status, note, warning
 
 def place_logo_body(file_in, file_out, config):
-        file_path = file_in
+        file_path = file_in 
         note = ''
 
-        doc = Document(file_path)
         new_file_path = os.path.basename(file_path)
+
+        if (file_in.endswith('.docx')):
+            doc = Document(file_path)
+            header_images_paths = header_images[new_file_path]
+        elif (file_in.endswith('.xls') or file_in.endswith('.xlsx')):
+            doc = openpyxl.load_workbook(file_path)
+            header_images_paths = []
+
         doc.save((config["BetweenFolder"]) + new_file_path)
 
         # Open input document and new document
         with ZipFile(open((config["BetweenFolder"]) + new_file_path, "rb")) as zip_in:
             with ZipFile(file_out, "w", ZIP_DEFLATED) as zip_out:
-                header_images_paths = header_images[new_file_path]
                 
                 # Copy contents to zip_out
                 for path in zip_in.namelist():
@@ -721,7 +714,7 @@ def place_logo_body(file_in, file_out, config):
                     for image in image_locations:
                         for logo in logo_locations:
                             similar = compare_images(config["FoundLogosFolder"] + logo, config["BetweenFolder"] + image)
-                            
+
                             # Replace image if similar
                             if (similar):
                                 zip_image_location = f'{os.path.dirname(image)}/{os.path.basename(image)}'
@@ -911,8 +904,7 @@ def process_file_word(file_in, file_out, config):
     file_out_path = file_out
 
     # log variables
-    text_note = ''
-    status, note, warning = '', '', ''
+    status, note, warning, text_note = '', '', '', ''
 
     # Convert file to docx if it ends in doc
     if file_path.endswith('.doc') or file_path.endswith('.docm'):
@@ -936,8 +928,6 @@ def process_file_word(file_in, file_out, config):
         with ZipFile(file_out_path, "w", ZIP_DEFLATED) as zip_out:
             # copy document and replace content
             copy_and_replace(zip_in, zip_out, config)
-            # check for logo
-            status, note, warning = place_logo_header(zip_in, zip_out, config)
             # Add missing images
             add_missing_images(zip_in, zip_out)
 
@@ -950,19 +940,97 @@ def process_file_word(file_in, file_out, config):
 def process_file_excel(file_in, file_out, config):
     file_path = file_in
 
-    if file_path.endswith('.xls'):
-        # Convert .xls file to .xlsx and update file path
+    worksheets_with_header = set()
+
+    if file_path.endswith('.xls') or file_path.endswith('.xlsm'):
+        # Convert .xls or .xlsm file to .xlsx and update file path
         file_path = convert_file(file_path, FILE_FORMAT_XLSX)
 
     # Get workbook from path
     workbook = openpyxl.load_workbook(file_path)
+
+    # Store header methods
+    headers = ['oddHeader.left', 'oddHeader.center', 'oddHeader.right', 'oddFooter.left', 'oddFooter.center', 'oddFooter.right']
+
+    # Create logo image
+    logo = openpyxl.drawing.image.Image(config['NewLogoPath'])
+    logo.anchor = 'A1'
+    logo.width = 265.3
+    logo.height = 200
+
+    # log variables
+    status, note, warning, text_note = '', '', '', ''
     
-    # Cycle through sheets
+     # Cycle through sheets
     for worksheet in workbook.worksheets:
-        print(worksheet.cell(1, 1).value)
+        # Cycle through headers and replace text
+        for header in headers:
+            header_text = eval(f'worksheet.{header}.text')
 
-    # print(worksheets)
+            if (header_text is not None):
+                for value in config["ReplaceString"]:
+                    header_text = header_text.replace(value[0], value[1])
 
+                    worksheets_with_header.add(worksheet.title)
+                    # Set new text depending on the current header
+                    match headers.index(header):
+                        case 0:
+                            worksheet.oddHeader.left.text = header_text
+                        case 1:
+                            worksheet.oddHeader.center.text = header_text
+                        case 2:
+                            worksheet.oddHeader.right.text = header_text
+                        case 3:
+                            worksheet.oddFooter.left.text = header_text
+                        case 4:
+                            worksheet.oddFooter.center.text = header_text
+                        case 5:
+                            worksheet.oddFooter.right.text = header_text
+                        
+        # Cycle through rows and replace text
+        for row in worksheet.iter_rows():
+            for cell in row:
+                cell_value = cell.value
+                if cell_value and isinstance(cell_value, str):
+                    for value in config["ReplaceString"]:
+                        cell_value = cell_value.replace(value[0], value[1])
+                        if (cell_value != cell.value):
+                            cell.value = cell_value
+    
+    # Add logo to worksheet
+    for worksheet_name in worksheets_with_header:
+        ws = workbook[worksheet_name] 
+        ws.insert_rows(1)
+        ws.row_dimensions[1].height = 180
+        ws.add_image(logo)
+
+    new_file_path = config['BetweenFolder'] + os.path.basename(file_out)
+    workbook.save(new_file_path)
+
+    # Add drawings back into the file
+    add_excel_drawings_to_file(file_path, new_file_path)
+
+    log.write(f"{file_in};{status};{note};{text_note};{warning}\n")
+
+    return True
+
+def add_excel_drawings_to_file(original_file, file_in, file_out):
+    # Open input document and new document
+    with ZipFile(file_in, "r") as zip_in:
+        with ZipFile(file_out, "w", ZIP_DEFLATED) as zip_out:
+            # Copy contents to zip_out
+            for path in zip_in.namelist():
+                if 'drawings' not in path:
+                    file_content = zip_in.read(path)
+                    zip_out.writestr(path, file_content)
+            
+            with ZipFile(original_file, "r", ZIP_DEFLATED) as zip_original:
+                # Copy drawings from original file to zip_out
+                for path_original in zip_original.namelist():
+                    if 'drawings' in path_original:
+                        file_content = zip_original.read(path_original)
+                        zip_out.writestr(path_original, file_content)
+ 
     return True
 
 def process_file_powerpoint(file_in, file_out, config):
@@ -1011,7 +1079,7 @@ def add_missing_images(zip_in, zip_out):
         The output ZipFile object where the missing images will be added.
     """
     # Get a list of image filenames from zip_in
-    image_files = [item.filename for item in zip_in.infolist() if item.filename.startswith('word/media/')]
+    image_files = [item.filename for item in zip_in.infolist() if '/media/' in item.filename]
 
     # Check if the image already exists in zip_out, and if not, add it
     for image_file in image_files:
@@ -1175,15 +1243,15 @@ def main():
 
                 # Process the file if it's not empty
                 print(f"File {file_number}/{file_count} -- Processing {file}")
-                try:
-                    if (os.path.getsize(file_in) != 0):
-                        process_file(file_in, file_out, config)
-                    else:
-                        print(f"File skipped because it's empty: {file}")
-                        log.write(f"{file_in};-;File skipped because it's empty!\n")
-                except Exception as e:
-                    print(f'File failed to process! File name: {file}')
-                    log.write(f"{file_in};-;File failed to process!;Error:{e}\n")
+                process_file(file_in, file_out, config)
+                # try:
+                #     if (os.path.getsize(file_in) != 0):
+                #     else:
+                #         print(f"File skipped because it's empty: {file}")
+                #         log.write(f"{file_in};-;File skipped because it's empty!\n")
+                # except Exception as e:
+                #     print(f'File failed to process! File name: {file}\nError: {e}')
+                #     log.write(f"{file_in};-;File failed to process!;Error:{e}\n")
                 # End timer and output time
                 print(f"Processing took {time() - start_time:.3f} seconds")
 

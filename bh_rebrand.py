@@ -27,7 +27,7 @@ import shutil
 import openpyxl
 from openpyxl.drawing.image import Image as xlsxImage
 from openpyxl.drawing.spreadsheet_drawing import SpreadsheetDrawing
-import xlrd
+# import xlrd
 import pathlib
 from PIL import Image, ImageOps
 import numpy as np
@@ -668,6 +668,7 @@ def place_logo_header(zip_in, zip_out, config):
 def place_logo_body(file_in, file_out, config):
         file_path = file_in 
         note = ''
+        isExcel = False
 
         new_file_path = os.path.basename(file_path)
 
@@ -677,6 +678,8 @@ def place_logo_body(file_in, file_out, config):
         elif (file_in.endswith('.xls') or file_in.endswith('.xlsx')):
             doc = openpyxl.load_workbook(file_path)
             header_images_paths = []
+            isExcel = True
+
 
         doc.save((config["BetweenFolder"]) + new_file_path)
 
@@ -743,8 +746,11 @@ def place_logo_body(file_in, file_out, config):
                         shutil.rmtree(config["BetweenFolder"] + zip_image_base_directory)
 
                 # Add missing images
-                add_missing_images(zip_in, zip_out)
-
+                if(isExcel):
+                    with ZipFile(open(f'{(config["InputFolder"])}\{new_file_path}', "rb")) as zip_original:
+                        add_missing_images(zip_original, zip_out)
+                else:
+                    add_missing_images(zip_in, zip_out)
         # Remove file from betweenFolder
         os.remove((config["BetweenFolder"]) + new_file_path)
 
@@ -998,17 +1004,17 @@ def process_file_excel(file_in, file_out, config):
                             cell.value = cell_value
     
     # Add logo to worksheet
-    for worksheet_name in worksheets_with_header:
-        ws = workbook[worksheet_name] 
-        ws.insert_rows(1)
-        ws.row_dimensions[1].height = 180
-        ws.add_image(logo)
+    # for worksheet_name in worksheets_with_header:
+    #     ws = workbook[worksheet_name] 
+    #     ws.insert_rows(1, 6)
+    #     ws.row_dimensions[1].height = 180
+    #     ws.add_image(logo)
 
     new_file_path = config['BetweenFolder'] + os.path.basename(file_out)
-    workbook.save(new_file_path)
+    workbook.save(file_out)
 
     # Add drawings back into the file
-    add_excel_drawings_to_file(file_path, new_file_path)
+    # add_excel_drawings_to_file(file_path, new_file_path)
 
     log.write(f"{file_in};{status};{note};{text_note};{warning}\n")
 
@@ -1060,7 +1066,8 @@ def process_file(file_in, file_out, config):
         case '.doc' | '.docx' | '.docm':
             process_file_word(file_in, file_out, config)
         case '.xlsx' | '.xls':
-            process_file_excel(file_in, file_out, config)
+            # process_file_excel(file_in, file_out, config)
+            print('')
         case '.pptx':
             process_file_powerpoint(file_in, file_out, config)
         case '.pdf':

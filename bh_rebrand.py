@@ -71,9 +71,9 @@ def replace_text(runs, target, replace):
     full_text = ""
     for end, run in enumerate(runs):
         full_text += run.text
-        # print('Full text: ', full_text)
+
         if target in full_text:
-            # print('Target in full text. Target: ', target, ' full text: ', full_text)
+
             # Find the beginning index
             index = full_text.index(target)
             while index >= len(runs[begin].text):
@@ -85,7 +85,6 @@ def replace_text(runs, target, replace):
 
             # Perform the replace operation
             if target in shuttle[0].text:
-                # print('Replacing: ', target, ' with: ', shuttle[0].text)
                 shuttle[0].text = shuttle[0].text.replace(target, replace)
             else:
                 replace_begin_index = full_text.index(target)
@@ -212,7 +211,6 @@ def text_rebrand(file_in, config):
 
                     # check if paragraph contains text
                     if ffooterpar.text:
-                        'print(ffooterpar.text)'
                         # check if target text exists in paragraph text
                         if replace_duo[0] in ffooterpar.text:
                             text = ffooterpar.text.replace(replace_duo[0], replace_duo[1])
@@ -278,7 +276,6 @@ def text_rebrand(file_in, config):
                     # Check if hyperlink text contains target tex
                     if replace_duo[0] in inner_run.text:
                         text = inner_run.text.replace(replace_duo[0], replace_duo[1])
-                        'print(text)'
 
                         # Check if replaced text is not the same as original
                         if text != inner_run.text:
@@ -477,9 +474,8 @@ def replace_header_images(zip_in, zip_out, config, note):
             # Disable error from using \S\s in a binary string which is needed for regex
             # Get every target image
             image_locations = findall(b'Target="media[\S\s]*?"', zip_in.read(file))
-            # print('image_locations', image_locations) # FOR TESTING - DELETE AFTER
+
             if len(image_locations) > 1:
-                # print(">>Changing multiple header images!") # FOR TESTING - DELETE AFTER
                 warning = "Warning: Multiple images found in header"
             for image_location in image_locations:
                 image_location = image_location[image_location.find(b"media"):-1].decode("ascii")
@@ -746,11 +742,7 @@ def place_logo_body(file_in, file_out, config):
                         shutil.rmtree(config["BetweenFolder"] + zip_image_base_directory)
 
                 # Add missing images
-                if(isExcel):
-                    with ZipFile(open(f'{(config["InputFolder"])}\{new_file_path}', "rb")) as zip_original:
-                        add_missing_images(zip_original, zip_out)
-                else:
-                    add_missing_images(zip_in, zip_out)
+                add_missing_images(zip_in, zip_out)
         # Remove file from betweenFolder
         os.remove((config["BetweenFolder"]) + new_file_path)
 
@@ -948,6 +940,8 @@ def process_file_excel(file_in, file_out, config):
 
     worksheets_with_header = set()
 
+    original_image_paths = get_file_image_paths(file_in)
+
     if file_path.endswith('.xls') or file_path.endswith('.xlsm'):
         # Convert .xls or .xlsm file to .xlsx and update file path
         file_path = convert_file(file_path, FILE_FORMAT_XLSX)
@@ -1004,6 +998,7 @@ def process_file_excel(file_in, file_out, config):
                             cell.value = cell_value
     
     # Add logo to worksheet
+    # Note: Scaling a row's dimension breaks some content of the page
     # for worksheet_name in worksheets_with_header:
     #     ws = workbook[worksheet_name] 
     #     ws.insert_rows(1, 6)
@@ -1013,12 +1008,22 @@ def process_file_excel(file_in, file_out, config):
     new_file_path = config['BetweenFolder'] + os.path.basename(file_out)
     workbook.save(file_out)
 
+    after_image_paths = get_file_image_paths(file_out)
+
     # Add drawings back into the file
     # add_excel_drawings_to_file(file_path, new_file_path)
 
     log.write(f"{file_in};{status};{note};{text_note};{warning}\n")
 
     return True
+
+def get_file_image_paths(file_path):
+    image_paths = []
+    with ZipFile(file_path, "r") as zip_in:
+        for path in zip_in.namelist():
+            if 'media' in path:
+                image_paths.append(path)
+    return image_paths
 
 def add_excel_drawings_to_file(original_file, file_in, file_out):
     # Open input document and new document
@@ -1066,8 +1071,7 @@ def process_file(file_in, file_out, config):
         case '.doc' | '.docx' | '.docm':
             process_file_word(file_in, file_out, config)
         case '.xlsx' | '.xls':
-            # process_file_excel(file_in, file_out, config)
-            print('')
+            process_file_excel(file_in, file_out, config)
         case '.pptx':
             process_file_powerpoint(file_in, file_out, config)
         case '.pdf':
@@ -1250,15 +1254,15 @@ def main():
 
                 # Process the file if it's not empty
                 print(f"File {file_number}/{file_count} -- Processing {file}")
-                process_file(file_in, file_out, config)
-                # try:
-                #     if (os.path.getsize(file_in) != 0):
-                #     else:
-                #         print(f"File skipped because it's empty: {file}")
-                #         log.write(f"{file_in};-;File skipped because it's empty!\n")
-                # except Exception as e:
-                #     print(f'File failed to process! File name: {file}\nError: {e}')
-                #     log.write(f"{file_in};-;File failed to process!;Error:{e}\n")
+                try:
+                    if (os.path.getsize(file_in) != 0):
+                        process_file(file_in, file_out, config)
+                    else:
+                        print(f"File skipped because it's empty: {file}")
+                        log.write(f"{file_in};-;File skipped because it's empty!\n")
+                except Exception as e:
+                    print(f'File failed to process! File name: {file}\nError: {e}')
+                    log.write(f"{file_in};-;File failed to process!;Error:{e}\n")
                 # End timer and output time
                 print(f"Processing took {time() - start_time:.3f} seconds")
 

@@ -952,7 +952,7 @@ def process_file_excel(file_in, file_out, config):
     # Store header methods
     headers = ['oddHeader.left', 'oddHeader.center', 'oddHeader.right', 'oddFooter.left', 'oddFooter.center', 'oddFooter.right']
 
-    # Create logo image
+    # Create logo image -- DELETE IF NOT ADDING A ROW TO THE FILE (FOR THE HEADER IMAGE)
     logo = openpyxl.drawing.image.Image(config['NewLogoPath'])
     logo.anchor = 'A1'
     logo.width = 265.3
@@ -997,7 +997,7 @@ def process_file_excel(file_in, file_out, config):
                         if (cell_value != cell.value):
                             cell.value = cell_value
     
-    # Add logo to worksheet
+    # Add logo to worksheet -- DELETE IF NOT ADDING A ROW TO THE FILE (FOR THE HEADER IMAGE)
     # Note: Scaling a row's dimension breaks some content of the page
     # for worksheet_name in worksheets_with_header:
     #     ws = workbook[worksheet_name] 
@@ -1025,6 +1025,7 @@ def get_file_image_paths(file_path):
                 image_paths.append(path)
     return image_paths
 
+# DELETE IF ADDING THE SHAPES WITH THE FUNCTION IN XML_TEST.PY
 def add_excel_drawings_to_file(original_file, file_in, file_out):
     # Open input document and new document
     with ZipFile(file_in, "r") as zip_in:

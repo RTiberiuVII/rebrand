@@ -12,16 +12,15 @@ Applies to company logo, company name, document font, brand colors
 import sys
 import os
 import re
-import xml.etree.ElementTree
 from time import time, strftime, gmtime
 from datetime import datetime
 from re import sub, search, findall, IGNORECASE
 from zipfile import ZipFile, ZIP_DEFLATED
 
-import PIL
-import lxml
-import lxml.etree as ET
-import pptx.util
+import lxml.etree
+import pandas
+import win32com.client
+import xlwings as xlwings
 from docx import Document
 from docx.oxml.ns import qn
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
@@ -31,14 +30,13 @@ import xml.etree.ElementTree as ET
 import win32com.client as win32
 import shutil
 import openpyxl
+import xlsxwriter
+from openpyxl.drawing.image import Image as xlsxImage
+from openpyxl.drawing.spreadsheet_drawing import SpreadsheetDrawing
+# import xlrd
 import pathlib
 from PIL import Image, ImageOps
-from pptx import Presentation
 import numpy as np
-from pdf2docx import Converter as ConverterPdf2Docx
-from docx2pdf import convert as convertDocx2Pdf
-
-# import numpy as np
 
 FILE_FORMAT_PDF_WORD = 17
 FILE_FORMAT_PDF_EXCEL = 0
@@ -80,9 +78,9 @@ def replace_text(runs, target, replace):
     full_text = ""
     for end, run in enumerate(runs):
         full_text += run.text
-        # print('Full text: ', full_text)
+
         if target in full_text:
-            # print('Target in full text. Target: ', target, ' full text: ', full_text)
+
             # Find the beginning index
             index = full_text.index(target)
             while index >= len(runs[begin].text):
@@ -94,7 +92,6 @@ def replace_text(runs, target, replace):
 
             # Perform the replace operation
             if target in shuttle[0].text:
-                # print('Replacing: ', target, ' with: ', shuttle[0].text)
                 shuttle[0].text = shuttle[0].text.replace(target, replace)
             else:
                 replace_begin_index = full_text.index(target)
@@ -222,7 +219,6 @@ def text_rebrand(file_in, config):
 
                     # check if paragraph contains text
                     if ffooterpar.text:
-                        'print(ffooterpar.text)'
                         # check if target text exists in paragraph text
                         if replace_duo[0] in ffooterpar.text:
                             text = ffooterpar.text.replace(replace_duo[0], replace_duo[1])
@@ -286,7 +282,6 @@ def text_rebrand(file_in, config):
                     # Check if hyperlink text contains target tex
                     if replace_duo[0] in inner_run.text:
                         text = inner_run.text.replace(replace_duo[0], replace_duo[1])
-                        'print(text)'
 
                         # Check if replaced text is not the same as original
                         if text != inner_run.text:
@@ -382,22 +377,6 @@ def copy_and_replace(zip_in, zip_out, config):
         # Check if the path is not in the media folder
         if not "media" in path:
             file_content = zip_in.read(path)
-            decoded_content = try_decode(file_content)
-            # Replace specified content
-            for replace_duo in config["ReplaceString"]:
-                # test = file_content.find(replace_duo[0])
-                # findall(replace_duo[0], file_content)
-                # print(test)
-                # if findall(replace_duo[0], file_content):
-                # if replace_duo[0] in file_content:
-                if search(replace_duo[0], decoded_content):
-                    textnote += f"Legacy TextObject Found: {replace_duo[0]} in {path}, "
-                '''
-                if replace_duo[1] in config["case-unsensitive"]:
-                    file_content = sub(replace_duo[0], replace_duo[1], file_content, flags=IGNORECASE)
-                else:
-                    file_content = sub(replace_duo[0], replace_duo[1], file_content)
-                '''
             # Copy file into new document
             zip_out.writestr(path, file_content)
     return textnote
@@ -503,9 +482,8 @@ def replace_header_images(zip_in, zip_out, config, note):
             # Disable error from using \S\s in a binary string which is needed for regex
             # Get every target image
             image_locations = findall(b'Target="media[\S\s]*?"', zip_in.read(file))
-            # print('image_locations', image_locations) # FOR TESTING - DELETE AFTER
+
             if len(image_locations) > 1:
-                # print(">>Changing multiple header images!") # FOR TESTING - DELETE AFTER
                 warning = "Warning: Multiple images found in header"
             for image_location in image_locations:
                 image_location = image_location[image_location.find(b"media"):-1].decode("ascii")
@@ -694,15 +672,23 @@ def place_logo_header(zip_in, zip_out, config):
 def place_logo_body(file_in, file_out, config):
     file_path = file_in
     note = ''
+    isExcel = False
 
-    doc = Document(file_path)
     new_file_path = os.path.basename(file_path)
+
+    if (file_in.endswith('.docx')):
+        doc = Document(file_path)
+        header_images_paths = header_images[new_file_path]
+    elif (file_in.endswith('.xls') or file_in.endswith('.xlsx')):
+        doc = openpyxl.load_workbook(file_path)
+        header_images_paths = []
+        isExcel = True
+
     doc.save((config["BetweenFolder"]) + new_file_path)
 
     # Open input document and new document
     with ZipFile(open((config["BetweenFolder"]) + new_file_path, "rb")) as zip_in:
         with ZipFile(file_out, "w", ZIP_DEFLATED) as zip_out:
-            header_images_paths = header_images[new_file_path]
 
             # Copy contents to zip_out
             for path in zip_in.namelist():
@@ -765,7 +751,6 @@ def place_logo_body(file_in, file_out, config):
 
             # Add missing images
             add_missing_images(zip_in, zip_out)
-
     # Remove file from betweenFolder
     os.remove((config["BetweenFolder"]) + new_file_path)
 
@@ -797,8 +782,6 @@ def get_filetype(file, config):
         config["filetype"] = "xl"
     elif ".ppt" in file:
         config["filetype"] = "ppt"
-    elif ".pdf" in file:
-        config["filetype"] = "pdf"
     else:
         # Remove "filetype" from config if filetype is unknown
         try:
@@ -929,8 +912,7 @@ def process_file_word(file_in, file_out, config):
     file_out_path = file_out
 
     # log variables
-    text_note = ''
-    status, note, warning = '', '', ''
+    status, note, warning, text_note = '', '', '', ''
 
     # Convert file to docx if it ends in doc
     if file_path.endswith('.doc') or file_path.endswith('.docm'):
@@ -954,92 +936,18 @@ def process_file_word(file_in, file_out, config):
         with ZipFile(file_out_path, "w", ZIP_DEFLATED) as zip_out:
             # copy document and replace content
             copy_and_replace(zip_in, zip_out, config)
-            # check for logo
-            status, note, warning = place_logo_header(zip_in, zip_out, config)
             # Add missing images
             add_missing_images(zip_in, zip_out)
 
     # Remove file from betweenFolder
-    # os.remove((config["BetweenFolder"]) + new_file_path)
+    os.remove((config["BetweenFolder"]) + new_file_path)
 
     log.write(f"{file_in};{status};{note};{text_note};{warning}\n")
 
 
-def process_file_excel(file_in, file_out, config):
-    file_path = file_in
-
-    if file_path.endswith('.xls'):
-        # Convert .xls file to .xlsx and update file path
-        file_path = convert_file(file_path, FILE_FORMAT_XLSX)
-
-    # Get workbook from path
-    workbook = openpyxl.load_workbook(file_path)
-
-    # Cycle through sheets
-    for worksheet in workbook.worksheets:
-        print(worksheet.cell(1, 1).value)
-
-    # print(worksheets)
-
-    return True
-
-
-def pptx_replace(prs, config):
+def copy_and_replace_content_excel(file_in, file_out, config):
     """
-    Replace all text in the presentation slides and notes section
-
-    Parameters
-    ----------
-    prs: The PowerPoint Presentation object
-    config: Configuration file
-
-    Returns None
-    -------
-
-    """
-
-    for slide in prs.slides:  # Iterate over each slide in the presentation
-        for shape in slide.shapes:  # Iterate through the building blocks (shapes) of the slide
-            try:
-                text_frame = shape.text_frame  # Get the text frame from the slide
-                # Call the replace function passing in the frame and the configuration file
-                _pptx_text_replace(text_frame=text_frame, config=config)
-            except AttributeError:  # Certain objects have no text frame attribute hence they will be skipped
-                continue
-        # Check whether the slide contains notes
-        if slide.has_notes_slide:
-            # If the notes section is not empty get the text frame
-            if slide.notes_slide.notes_text_frame:
-                notes_text_frame = slide.notes_slide.notes_text_frame  # Get the text frame from the notes slide
-                # Call the replace function passing in the frame and the configuration file
-                _pptx_text_replace(text_frame=notes_text_frame, config=config)
-
-
-def _pptx_text_replace(text_frame, config):
-    """
-    Calls the 'replace_text' function an applies text replacement for the PowerPoint text frame
-
-    Parameters
-    ----------
-    text_frame: A PowerPoint text frame either from a slide or from a note
-    config: Configuration file containing string replacement definitions
-
-    Returns None
-    ------
-    """
-
-    # Iterate through each replacement definitions in the config file
-    for replace_duo in config['ReplaceString']:
-        # Iterate through each 'paragraph' block in the text frame
-        for paragraph in text_frame.paragraphs:
-            # Call the 'replace_text' function passing in the 'runs' from the paragraph, the target and replacement
-            # strings
-            replace_text(runs=paragraph.runs, target=replace_duo[0], replace=replace_duo[1])
-
-
-def process_file_powerpoint(file_in, file_out, config):
-    """
-    Replaces old Logo / text in PowerPoint files
+    Perform copying the content from the input file, replaces imagery and text
 
     Parameters
     ----------
@@ -1048,38 +956,31 @@ def process_file_powerpoint(file_in, file_out, config):
     file_out: string
         path to the output file
     config: dict
-        Key-value pairs for configuration in a form of a dictionary
+        Configuration file
 
     Returns None
     -------
     """
 
-    file_path = file_in  # Path to the input file
-    file_out_path = file_out  # Path to the output file
+    new_file_path = os.path.basename(file_in)
 
-    prs = Presentation(file_path)  # Instantiate the Presentation object using the python-pptx module
+    # Open the input Zip file for reading and the output Zip file for writing
+    with ZipFile(open(config['InputFolder'] + '\\' + new_file_path, 'rb')) as zip_in:
+        with ZipFile(file_out, 'w') as zip_out:
 
-    pptx_replace(prs=prs, config=config)  # Replace text in presentation slides and notes
-
-    new_file_path = os.path.basename(file_path)
-    prs.save((config['BetweenFolder']) + new_file_path)
-
-    # Open the input document to access the underlying XML files for the PowerPoint presentation
-    with ZipFile(open(config['BetweenFolder'] + new_file_path, 'rb')) as zip_in:
-        with ZipFile(file_out_path, 'w', ZIP_DEFLATED) as zip_out:
-
-            # Copy the content of the input file to the output file except the media folder and slide xml files
+            # Copy the content of the input file except the media folder and xml files containing strings to be replaced
+            # on the worksheets
             for path in zip_in.namelist():
                 if 'media' not in path:
-                    if '/slides/' in path:
-                        if path.endswith('.xml'):
+                    if 'worksheets' in path or 'sharedStrings' in path:
+                        if path.endswith('xml'):
+                            # print(f' NOT COPIED: {path}')  # TESTING
                             continue
                     file_content = zip_in.read(path)
                     zip_out.writestr(path, file_content)
 
-            # Extract all images from the presentation stored in the media folder
+            # Extract all images from the workbook stored in the media folder
             image_locations = [img_loc for img_loc in zip_in.namelist() if '/media/' in img_loc]
-            # print(image_locations)  # TESTING
             # Extract all images
             zip_in.extractall(config['BetweenFolder'], members=image_locations)
 
@@ -1102,7 +1003,7 @@ def process_file_powerpoint(file_in, file_out, config):
                         if similarity:
                             # Print similarity result for testing
                             # print(f'SIMILARITY CHECK for {image_location} WITH {logo_location} RESULTED --> '
-                            # f'{similarity}')
+                                  # f'{similarity}')
                             zip_image_location = f'{os.path.dirname(image_location)}/{os.path.basename(image_location)}'
                             # print(f'ZIP IMAGE LOCATION: {zip_image_location}')  # Print Zip Image Location for testing
 
@@ -1123,403 +1024,212 @@ def process_file_powerpoint(file_in, file_out, config):
                             image_data = zip_in.read(image_location)
                             zip_out.writestr(image_location, image_data)
 
-                # Get base directory where images are located
-                zip_image_base_directory = image_location.split('/')[0]
+            # Perform text replacement in the xml files
+            _replace_text_excel(zip_in=zip_in, zip_out=zip_out, config=config)
 
-                # Delete extracted images following iteration
-                if os.path.exists(config['BetweenFolder'] + zip_image_base_directory):
-                    shutil.rmtree(config['BetweenFolder'] + zip_image_base_directory)
 
-            for path in zip_in.namelist():
-                if '/slides/' in path and path.endswith('.xml'):
-                    # For each slide in the PowerPoint file hide the background graphics
-                    disable_background_graphics(zip_in=zip_in, zip_out=zip_out, xml_path=path)
+def _replace_text_excel(zip_in, zip_out, config):
+    """
+    Finds elements in the input files that contain outdated text and replaces them
 
-    os.remove(config['BetweenFolder'] + new_file_path)  # Remove the file from the 'between' folder
+    Parameters
+    ----------
+    zip_in: Input Zip archive
+    zip_out: Output Zip archive
+    config: dict - Configuration file
 
-    prs = Presentation(file_out_path)  # Load in the presentation from the output file
+    Returns None
+    -------
+    """
 
-    insert_replacement_image_to_slide(prs=prs, config=config)  # Insert the BakerHughes logo in
+    prefix_map = {
+        'xmlns': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+    }  # Mapping of namespaces in the XML
 
-    change_bg_color(prs=prs)  # Change the background color of the slides in the presentation
+    # Iterate through all files in the input archive
+    for path in zip_in.namelist():
+        # If worksheets or the sharedStrings XML files are present in the archive
+        if '/worksheets/' in path or 'sharedStrings' in path:
+            if path.endswith('xml'):
 
-    prs.save(file_out_path)  # Save the presentation
+                xml_tree = zip_in.read(path)  # Open and read in the XML file from path
+                root = lxml.etree.fromstring(xml_tree)  # Parse the XML tree
+
+                # Variable to hold xml elements that will need to be string validated
+                string_elements = []
+
+                if 'sharedStrings' in path:
+                    # Find all t - 'text' tags in the sharedStrings XML file
+                    string_elements = root.findall('.//xmlns:t', namespaces=prefix_map)
+                else:
+                    # In the worksheet XML find 'oddHeader' and 'oddFooter' elements that might contain strings that
+                    # need to be replaced
+                    odd_headers = root.findall('.//xmlns:oddHeader', namespaces=prefix_map)
+                    string_elements.extend(odd_headers)
+                    odd_footers = root.findall('.//xmlns:oddFooter', namespaces=prefix_map)
+                    string_elements.extend(odd_footers)
+
+                # If elements with text were found pass them to the replace string function
+                if string_elements is not None:
+                    _replace_string_excel(elements=string_elements, config=config)
+
+                # Write the XML with replaced text to the output file at the path
+                replaced_text_xml = lxml.etree.tostring(root, encoding='UTF-8')
+                zip_out.writestr(path, replaced_text_xml)
+
+
+def _replace_string_excel(elements, config):
+    """
+    Performs text replacement on XML elements with text values
+
+    Parameters
+    ----------
+    elements: List
+        List of XML elements with text value to be replaced
+    config: dict
+        Configuration file
+
+    Returns None
+    -------
+    """
+
+    for element in elements:
+        for value in config['ReplaceString']:
+            replaced_value = element.text.replace(value[0], value[1])
+            if replaced_value != element.text:
+                element.text = replaced_value
+
+
+def process_file_excel(file_in, file_out, config):
+    file_input_path = file_in  # Input file path
+
+    # If file in wrong format then convert .xls or .xlsm file to .xlsx and update file path
+    if file_input_path.endswith('.xls') or file_input_path.endswith('.xlsm'):
+        file_input_path = convert_file(file_in, FILE_FORMAT_XLSX)
+        # Update the output basename accordingly so it will be saved as 'xlsx'
+        file_out = file_out.replace(file_out.rsplit(".")[-1], 'xlsx')
+
+    copy_and_replace_content_excel(file_in=file_input_path, file_out=file_out, config=config)
+
+
+    """worksheets_with_header = set()
+
+    original_image_paths = get_file_image_paths(file_in)  # Get file image locations from input file
+    print(f'IMAGE PATHS: {original_image_paths}')
+
+    if file_path.endswith('.xls') or file_path.endswith('.xlsm'):
+        # Convert .xls or .xlsm file to .xlsx and update file path
+        file_path = convert_file(file_path, FILE_FORMAT_XLSX)
+
+    # Get workbook from path
+    workbook = openpyxl.load_workbook(file_path)
+
+    # Store header methods
+    headers = ['oddHeader.left', 'oddHeader.center', 'oddHeader.right', 'oddFooter.left', 'oddFooter.center',
+               'oddFooter.right']
+
+    # Create logo image -- DELETE IF NOT ADDING A ROW TO THE FILE (FOR THE HEADER IMAGE)
+    logo = openpyxl.drawing.image.Image(config['NewLogoPath'])
+    logo.anchor = 'A1'
+    logo.width = 265.3
+    logo.height = 200
+
+    # log variables
+    status, note, warning, text_note = '', '', '', ''
+
+    # Cycle through sheets
+    for worksheet in workbook.worksheets:
+        # Cycle through headers and replace text
+        for header in headers:
+            header_text = eval(f'worksheet.{header}.text')
+
+            if header_text is not None:
+                for value in config["ReplaceString"]:
+                    header_text = header_text.replace(value[0], value[1])
+
+                    worksheets_with_header.add(worksheet.title)
+                    # Set new text depending on the current header
+                    match headers.index(header):
+                        case 0:
+                            worksheet.oddHeader.left.text = header_text
+                        case 1:
+                            worksheet.oddHeader.center.text = header_text
+                        case 2:
+                            worksheet.oddHeader.right.text = header_text
+                        case 3:
+                            worksheet.oddFooter.left.text = header_text
+                        case 4:
+                            worksheet.oddFooter.center.text = header_text
+                        case 5:
+                            worksheet.oddFooter.right.text = header_text
+
+        # Cycle through rows and replace text
+        for row in worksheet.iter_rows():
+            for cell in row:
+                cell_value = cell.value
+                if cell_value and isinstance(cell_value, str):
+                    for value in config["ReplaceString"]:
+                        cell_value = cell_value.replace(value[0], value[1])
+                        if cell_value != cell.value:
+                            cell.value = cell_value
+
+    # Add logo to worksheet -- DELETE IF NOT ADDING A ROW TO THE FILE (FOR THE HEADER IMAGE)
+    # Note: Scaling a row's dimension breaks some content of the page
+    # for worksheet_name in worksheets_with_header:
+    #     ws = workbook[worksheet_name] 
+    #     ws.insert_rows(1, 6)
+    #     ws.row_dimensions[1].height = 180
+    #     ws.add_image(logo)
+
+    #new_file_path = config['BetweenFolder'] + os.path.basename(file_out)
+    workbook.save(file_out)
+
+    #after_image_paths = get_file_image_paths(file_out)
+
+    # Add drawings back into the file
+    # add_excel_drawings_to_file(file_path, new_file_path)
+
+    log.write(f"{file_in};{status};{note};{text_note};{warning}\n")"""
 
     return True
 
 
-def _check_background_color(slide_layout):
-    """
-    Checks whether the old BH RGB color scheme (HEX values --> blue) is present on the slide
-
-    Parameters
-    ----------
-    slide_layout: SlideLayout object used by the current slide
-
-    Returns XML element containing old RGB colors to replace or None
-    -------
-    """
-
-    prefix_map = {
-        'p': 'http://schemas.openxmlformats.org/presentationml/2006/main',
-        'a': 'http://schemas.openxmlformats.org/drawingml/2006/main'
-    }  # Contains the mapping from namespace mapping to full name for searching the XML tree
-
-    old_colors_to_replace = ['005EB8', '00B5E2']  # HEX values of colors to look for on the slide
-
-    if slide_layout:  # If the slide layout exists
-        # Find all the elements that contain RGB color properties on the slide layout
-        color_lists = slide_layout.background.element.findall('.//a:gsLst', namespaces=prefix_map)
-        if color_lists is not None:
-            # Iterate over the found elements
-            for color_list in color_lists:
-                # If the 'Background Properties' element is the parent element
-                if 'bgPr' in color_list.getparent().getparent().tag:
-                    colors = color_list.findall('.//a:srgbClr', namespaces=prefix_map)  # Extract RGB colors
-                    if colors is not None:
-                        if colors[0].attrib is not None and colors[1].attrib is not None:
-                            # If color attributes are present and equal to the colors to be replaced
-                            if colors[0].attrib['val'] in old_colors_to_replace and \
-                                    colors[1].attrib['val'] in old_colors_to_replace:
-
-                                return color_list  # Return the 'color list' element
-    return None  # Return None otherwise
-
-
-def change_bg_color(prs):
-    """
-    Checks whether the old BH RGB color scheme (HEX values --> blue) is present on the slide
-
-    Parameters
-    ----------
-    prs: Presentation object
-
-    Returns None
-    -------
-    """
-
-    # NEW COLORS - 05322b --> green, 1d2920 --> darker green, 018374 -> very light green
-    # OLD COLORS - 005EB8 & 00B5E2
-
-    prefix_map = {
-        'p': 'http://schemas.openxmlformats.org/presentationml/2006/main',
-        'a': 'http://schemas.openxmlformats.org/drawingml/2006/main'
-    }  # Contains the mapping from namespace mapping to full name for searching the XML tree
-
-    # Iterate over all slide layouts in the presentation
-    for slide_layout in prs.slide_layouts:
-        color_list = _check_background_color(slide_layout=slide_layout)  # Check if old BH color scheme is present
-        if color_list is not None:
-            # Find the elements containing the RGB colors
-            colors = color_list.findall('.//a:srgbClr', prefix_map)
-            if colors is not None:
-                for clr in colors:
-                    if clr.attrib is not None:
-                        # Change old colors to new BH colors
-                        if clr.attrib['val'] == '005EB8':
-                            clr.attrib['val'] = '018374'
-                        if clr.attrib['val'] == '00B5E2':
-                            clr.attrib['val'] = '05322b'
-
-
-def _create_copyright_element():
-    """
-    Defines an XML string then parses it to create an element containing copyright information for BH
-
-    Parameters
-    ----------
-
-    Returns XML element
-    -------
-    """
-
-    # String representation of the XML element
-    xml_string = """<ns0:sp>
-                        <ns0:nvSpPr>
-                            <ns0:cNvPr id="999" name="Copyright Text"/>
-                            <ns0:cNvSpPr txBox="1"/>
-                            <ns0:nvPr userDrawn="1"/>
-                        </ns0:nvSpPr>
-                        <ns0:spPr>
-                            <ns1:xfrm>
-                                <ns1:off x="404874" y="6608933"/>
-                                <ns1:ext cx="2884874" cy="369332"/>
-                            </ns1:xfrm>
-                            <ns1:prstGeom prst="rect">
-                                <ns1:avLst/>
-                            </ns1:prstGeom>
-                            <ns1:noFill/>
-                        </ns0:spPr>
-                        <ns0:txBody>
-                            <ns1:bodyPr wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" rtlCol="0">
-                                <ns1:spAutoFit/>
-                            </ns1:bodyPr>
-                            <ns1:lstStyle/>
-                            <ns1:p>
-                                <ns1:r>
-                                    <ns1:rPr lang="en-US" sz="800" spc="-10" baseline="0" dirty="0">
-                                        <ns1:solidFill>
-                                            <ns1:schemeClr val="accent4"/>
-                                        </ns1:solidFill>
-                                    </ns1:rPr>
-                                    <ns1:t>Copyright 2021 Baker Hughes Company. All rights reserved.</ns1:t>
-                                </ns1:r>
-                            </ns1:p>
-                        </ns0:txBody>
-                    </ns0:sp>"""
-
-    parser = lxml.etree.XMLParser(encoding='UTF-8', recover=True, remove_blank_text=True)  # XML parser object
-    # Parse the string definition and create the XML element
-    copyright_xml_element = xml.etree.ElementTree.fromstring(xml_string, parser=parser)
-
-    return copyright_xml_element  # Return the XML element
-
-
-def insert_replacement_image_to_slide(prs, config):
-    """
-    Inserts the replacement BH logo to each slide in the PowerPoint presentation
-
-    Parameters
-    ----------
-    prs: Presentation object
-    config: Configuration file
-
-    Returns None
-    -------
-    """
-
-    slide_width = prs.slide_width.inches  # Get the slide width in inches
-    slide_height = prs.slide_height.inches  # Get the slide height in inches
-
-    # Define possible logo positions (top-right, bottom-left)
-    logo_positions = {
-        'bottom-right': {
-            'left': slide_width - 2.55,  # Distance from left edge of slide
-            'top': slide_height - 0.65  # Distance from the top of the slide
-        },
-        'top-left-first': {
-            'left': 0.6,
-            'top': 0.3
-        },
-        'bottom-left': {
-            'left': 0.5,
-            'top': slide_height - 0.6
-        }
-    }
-
-    # Iterate through all slides in the Presentation
-    for slide_num, slide in enumerate(prs.slides):
-        if slide_num == 0:  # If the slide is the first slide (Title slide)
-            # Check if old color scheme exists on the current slide's slide layout
-            if _check_background_color(slide_layout=slide.slide_layout) is not None:
-                # Add the Large, White BH logo to the top left of the slide
-                slide.shapes.add_picture(image_file=config['ReplacementImageWhiteLarge'],
-                                         left=pptx.util.Inches(logo_positions['top-left-first']['left']),
-                                         top=pptx.util.Inches(logo_positions['top-left-first']['top'])
-                                         )
-            else:  # If old color scheme is not detected
-                # Add the Large, Dark BH logo to the top left of the slide
-                slide.shapes.add_picture(image_file=config['ReplacementImageDarkLarge'],
-                                         left=pptx.util.Inches(logo_positions['top-left-first']['left']),
-                                         top=pptx.util.Inches(logo_positions['top-left-first']['top'])
-                                         )
-        else:  # For every other slide that is not a title slide
-            # Check if old color scheme exists on the current slide's slide layout
-            if _check_background_color(slide_layout=slide.slide_layout) is not None:
-                # Add the Small, White BH logo to the bottom right of the slide
-                slide.shapes.add_picture(image_file=config['ReplacementImageWhiteSmall'],
-                                         left=pptx.util.Inches(logo_positions['bottom-right']['left']),
-                                         top=pptx.util.Inches(logo_positions['bottom-right']['top'])
-                                         )
-            else:  # If old color scheme is not detected
-                # Add the Small, Dark BH logo to the bottom right of the slide
-                slide.shapes.add_picture(image_file=config['ReplacementImageDarkSmall'],
-                                         left=pptx.util.Inches(logo_positions['bottom-right']['left']),
-                                         top=pptx.util.Inches(logo_positions['bottom-right']['top'])
-                                         )
-
-
-def _delete_replacement_image(slide):
-    """
-    ---------------------------------- CURRENTLY NOT USED IN THE SCRIPT ----------------------------------
-    Deletes the BH replacement logo from the current slide
-
-    Parameters
-    ----------
-    slide: Slide object
-
-    Returns None
-    -------
-    """
-
-    for shape in slide.shapes:
-        # For each shape on the slide check if it is a picture
-        if 'pic' in shape.element.tag:
-            # Search for the Non-Visual Drawing Properties of the picture
-            element_pr = shape.element.find('.//ns0:cNvPr',
-                                            {'ns0': 'http://schemas.openxmlformats.org/presentationml/2006/main'})
-            if element_pr.attrib is not None:
-                if 'descr' in element_pr.attrib:
-                    if element_pr.attrib['descr'] == 'replacementImage2.png':
-                        # If the current element in the replacement image, delete it
-                        pic = shape.element
-                        pic_p = pic.getparent()
-                        pic_p.remove(pic)
-
-
-def check_for_logo_collision_updated(slide):
-    """
-    ---------------------------------- CURRENTLY NOT USED IN THE SCRIPT ----------------------------------
-    Checks if the BH logo collides with other elements on the current slide
-
-    Parameters
-    ----------
-    slide: Slide object
-
-    Returns Boolean value indicating whether there is a collision
-    -------
-    """
-
-    prefix_map = {
-        'ns0': 'http://schemas.openxmlformats.org/presentationml/2006/main',
-        'ns1': 'http://schemas.openxmlformats.org/drawingml/2006/main'
-    }  # Contains the mapping from namespace mapping to full name for searching the XML tree
-
-    img_element_pr = None  # Variable for holding image element properties
-    other_shapes_pr = []  # List for storing properties of other shapes
-
-    for shape in slide.shapes:
-        if 'pic' in shape.element.tag:
-            image_element = shape.element.find('.//ns0:cNvPr', prefix_map)
-            if image_element.attrib is not None:
-                if 'descr' in image_element.attrib:
-                    if image_element.attrib['descr'] in ['replacementImage2.png', 'replacementImage.png']:
-                        img_element_pr = shape.element
-                        # break
-        shape_element = shape.element.find('.//ns0:spPr', prefix_map)  # Find the Shape properties element
-        if shape_element is not None:
-            other_shapes_pr.append(shape_element)
-
-    img_element_pr_loc = get_element_location(img_element_pr, prefix_map)
-
-    other_shapes_pr_loc = [get_element_location(shape, prefix_map) for shape in other_shapes_pr]
-
-    for shape_pr_loc in other_shapes_pr_loc:
-        if shape_pr_loc is not None:
-            x_shape_start = shape_pr_loc['x']
-            x_shape_end = (shape_pr_loc['x'] + shape_pr_loc['cx'])
-            y_shape_start = shape_pr_loc['y']
-            y_shape_end = (shape_pr_loc['y'] + shape_pr_loc['cy'])
-
-            x_img_start = img_element_pr_loc['x']
-            x_img_end = (img_element_pr_loc['x'] + img_element_pr_loc['cx'])
-            y_img_start = img_element_pr_loc['y']
-            y_img_end = (img_element_pr_loc['y'] + img_element_pr_loc['cy'])
-
-            collision = False
-
-            if x_shape_start < x_img_start < x_shape_end and y_shape_start < y_img_end:
-                # print(f'COLLISION DETECTED ON: {slide}')
-                collision = True
-
-            elif x_shape_start < x_img_start < x_img_end and y_shape_start < y_img_start < y_shape_end:
-                # print(f'COLLISION DETECTED ON: {slide}')
-                collision = True
-
-            return collision
-
-
-def get_element_location(element_node, prefix_map):
-    """
-    ---------------------------------- CURRENTLY NOT USED IN THE SCRIPT ----------------------------------
-
-    Get the location and size of the element on the slide
-
-    Parameters
-    ----------
-    element_node: XML _Element object
-    prefix_map: dictionary
-        Mapping from namespace to full name
-
-    Returns Dictionary containing the X, Y coordinates of the element on the slide and the width and height of the
-    element --> {'x': int, 'y': int, 'cx': int, 'cy': int} -------
-    """
-
-    try:
-        # Get the X,Y coordinates of the element on the slide stored in the xfrm/off _Element attributes
-        # prefix_map = 'ns1': 'http://schemas.openxmlformats.org/drawingml/2006/main'
-        off = element_node.find('.//ns1:off', prefix_map).attrib
-        # Get the CX, CY - how far the _Element extends on the x and y-axis, stored in the xfrm/ext attributes
-        # prefix_map = 'ns1': 'http://schemas.openxmlformats.org/drawingml/2006/main'
-        ext = element_node.find('.//ns1:ext', prefix_map).attrib
-
-        # Convert the string values to int
-        locations = {key: int(value) for (key, value) in {**off, **ext}.items()}
-
-        return locations  # Return the locations dictionary
-    except AttributeError:
-        # If the current element is missing the 'off', 'ext' sub-elements return None
-        return None
-
-
-def disable_background_graphics(zip_in, zip_out, xml_path):
-    """
-    Disables the background graphics on the slide and adds copyright information
-
-    Parameters
-    ----------
-    zip_in: input ZipFile object
-    zip_out: output ZipFile object
-    xml_path: string
-        Path to the PowerPoint slide xml file
-
-    Returns None
-    -------
-    """
-
-    xml_tree = zip_in.open(xml_path).read()  # Open and read in the xml file from the path
-    # print(f'XML SLIDE {xml_path.split("/")[-1]} --> {ET.fromstring(xml_tree).tag}')
-    root = lxml.etree.fromstring(xml_tree)  # Parse the tree
-
-    if root.attrib.get('showMasterSp') is None:  # If 'showMasterSp' attribute is not present in the xml file
-        root.attrib['showMasterSp'] = '0'  # Set the showMasterSp attribute to 0 to hide background graphics
-
-    xml_element = _create_copyright_element()
-
-    sp_tree = root.find('.//ns0:spTree', {'ns0': 'http://schemas.openxmlformats.org/presentationml/2006/main'})
-    # sp_tree.insert(-1, xml_element)  # Append the xml element to the spTree
-    sp_tree.append(xml_element)  # Append the xml element to the spTree
-
-    modified_xml = ET.tostring(root, encoding='utf-8', xml_declaration=True)
-    zip_out.writestr(xml_path, modified_xml)
-
-    # Write the updated xml file to the output file
-    modified_xml = ET.tostring(root, encoding='utf-8', xml_declaration=True)
-    zip_out.writestr(xml_path, modified_xml)
+def get_file_image_paths(file_path):
+    image_paths = []
+    with ZipFile(file_path, "r") as zip_in:
+        for path in zip_in.namelist():
+            if 'media' in path:
+                image_paths.append(path)
+    return image_paths
+
+
+# DELETE IF ADDING THE SHAPES WITH THE FUNCTION IN XML_TEST.PY
+def add_excel_drawings_to_file(original_file, file_in, file_out):
+    # Open input document and new document
+    with ZipFile(file_in, "r") as zip_in:
+        with ZipFile(file_out, "w", ZIP_DEFLATED) as zip_out:
+            # Copy contents to zip_out
+            for path in zip_in.namelist():
+                if 'drawings' not in path:
+                    file_content = zip_in.read(path)
+                    zip_out.writestr(path, file_content)
+
+            with ZipFile(original_file, "r", ZIP_DEFLATED) as zip_original:
+                # Copy drawings from original file to zip_out
+                for path_original in zip_original.namelist():
+                    if 'drawings' in path_original:
+                        file_content = zip_original.read(path_original)
+                        zip_out.writestr(path_original, file_content)
+
+    return True
+
+
+def process_file_powerpoint(file_in, file_out, config):
+    return True
 
 
 def process_file_pdf(file_in, file_out, config):
-    file_path = file_in
-    file_name = file_path.split('\\')[-1][0:-4]
-    print(f'FILE NAME: {file_name}')
-    file_out_path = file_out.replace('.pdf', '.docx')
-    print(f'FILE OUTPUT: {file_out_path}')
-
-    if file_path.endswith('.pdf'):
-        cv_pdf_2_docx = ConverterPdf2Docx(file_path)
-        cv_pdf_2_docx.convert(config['InputFolder'] + f'/{file_name}.docx', start=0, end=None)
-        # print('CONVERTED PDF')
-        cv_pdf_2_docx.close()
-
-    process_file_word(file_in=config['InputFolder'] + f'/{file_name}.docx', file_out=file_out, config=config)
-
-    """wdFormatPDF = 17
-
-    word = comtypes.client.CreateObject('Word.Application')
-    doc = word.Documents.Open(file_out)
-    doc.SaveAs('test.pdf', wdFormatPDF)
-    doc.Close()
-    word.Quit()"""
+    return True
 
 
 def process_file(file_in, file_out, config):
@@ -1563,7 +1273,7 @@ def add_missing_images(zip_in, zip_out):
         The output ZipFile object where the missing images will be added.
     """
     # Get a list of image filenames from zip_in
-    image_files = [item.filename for item in zip_in.infolist() if item.filename.startswith('word/media/')]
+    image_files = [item.filename for item in zip_in.infolist() if '/media/' in item.filename]
 
     # Check if the image already exists in zip_out, and if not, add it
     for image_file in image_files:
@@ -1705,8 +1415,6 @@ def main():
                 file_in = os.path.join(config["InputFolder"], file)
                 file_out = os.path.join(output_folder, file)
 
-                print(f'FILE OUT IN MAIN: {file_out}')
-
                 # Check if current file is a path to a folder
                 if os.path.isdir(file_in):
                     # Ignore folder and continue
@@ -1736,8 +1444,7 @@ def main():
                         print(f"File skipped because it's empty: {file}")
                         log.write(f"{file_in};-;File skipped because it's empty!\n")
                 except Exception as e:
-                    print(f'File failed to process! File name: {file}')
-                    print(f"{file_in};-;File failed to process!;Error:{e}\n")
+                    print(f'File failed to process! File name: {file}\nError: {e}')
                     log.write(f"{file_in};-;File failed to process!;Error:{e}\n")
                 # End timer and output time
                 print(f"Processing took {time() - start_time:.3f} seconds")
@@ -1783,13 +1490,13 @@ def main():
                 # Replace image inside body
                 print(f'File {file_number_body}/{file_count} -- Replacing body image for: {file_body}')
                 try:
-                    place_logo_body(file_in, file_out, config)  # DISABLED FOR TESTING
-                    print("TEST")
+                    # place_logo_body(file_in, file_out, config)
+                    pass
                 except Exception as e:
                     print(f'Failed replacing the body images for file: {file_body} \nError: {e}')
                     log.write(f"{file_in};-;Failed replacing the body images!;Error:{e}\n")
                 # Remove file from headerImageReplaced folder
-                os.remove(file_in)
+                # os.remove(file_in)
 
         # Close COM Server
         if pdf_conversion:
@@ -1843,8 +1550,7 @@ def compare_images(image_path1, image_path2):
         # Increment counter
         image_comparisons += 1
     except Exception as e:
-        pass
-        # print('Image format not supported: ', str(e))
+        print('Image format not supported: ', str(e))
 
     return similarity
 

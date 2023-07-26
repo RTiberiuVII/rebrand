@@ -16,6 +16,11 @@ from time import time, strftime, gmtime
 from datetime import datetime
 from re import sub, search, findall, IGNORECASE
 from zipfile import ZipFile, ZIP_DEFLATED
+
+import lxml.etree
+import pandas
+import win32com.client
+import xlwings as xlwings
 from docx import Document
 from docx.oxml.ns import qn
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
@@ -25,6 +30,10 @@ import xml.etree.ElementTree as ET
 import win32com.client as win32
 import shutil
 import openpyxl
+import xlsxwriter
+from openpyxl.drawing.image import Image as xlsxImage
+from openpyxl.drawing.spreadsheet_drawing import SpreadsheetDrawing
+# import xlrd
 import pathlib
 from PIL import Image, ImageOps
 import numpy as np
@@ -37,6 +46,7 @@ FILE_FORMAT_DOCX = 16
 different_logos_found = 0
 image_comparisons = 0
 header_images = {}
+
 
 def count_docx(file_name):
     document = Document(file_name)
@@ -68,9 +78,9 @@ def replace_text(runs, target, replace):
     full_text = ""
     for end, run in enumerate(runs):
         full_text += run.text
-        # print('Full text: ', full_text)
+
         if target in full_text:
-            # print('Target in full text. Target: ', target, ' full text: ', full_text)
+
             # Find the beginning index
             index = full_text.index(target)
             while index >= len(runs[begin].text):
@@ -82,7 +92,6 @@ def replace_text(runs, target, replace):
 
             # Perform the replace operation
             if target in shuttle[0].text:
-                # print('Replacing: ', target, ' with: ', shuttle[0].text)
                 shuttle[0].text = shuttle[0].text.replace(target, replace)
             else:
                 replace_begin_index = full_text.index(target)
@@ -164,6 +173,7 @@ def docx_replace(doc, target, replace, warning):
 
     return warning
 
+
 def text_rebrand(file_in, config):
     # Store file path from CL Arguments.
     file_path = file_in
@@ -209,7 +219,6 @@ def text_rebrand(file_in, config):
 
                     # check if paragraph contains text
                     if ffooterpar.text:
-                        'print(ffooterpar.text)'
                         # check if target text exists in paragraph text
                         if replace_duo[0] in ffooterpar.text:
                             text = ffooterpar.text.replace(replace_duo[0], replace_duo[1])
@@ -240,7 +249,6 @@ def text_rebrand(file_in, config):
 
                                 # Check if replaced text is not the same as original
                                 if text != paragraph.text:
-
                                     # Replace the text and increment the number of occurrences
                                     paragraph.text = text
                                     occurrences[replace_duo[0]] += 1
@@ -260,7 +268,6 @@ def text_rebrand(file_in, config):
 
                     # Check if replaced text is not the same as original
                     if text != para.text:
-
                         # Replace the text and increment the number of occurrences
                         para.text = text
                         occurrences[replace_duo[0]] += 1
@@ -275,11 +282,9 @@ def text_rebrand(file_in, config):
                     # Check if hyperlink text contains target tex
                     if replace_duo[0] in inner_run.text:
                         text = inner_run.text.replace(replace_duo[0], replace_duo[1])
-                        'print(text)'
 
                         # Check if replaced text is not the same as original
                         if text != inner_run.text:
-
                             # Replace the text and increment the number of occurrences
                             inner_run.text = text
                             occurrences[replace_duo[0]] += 1
@@ -372,25 +377,10 @@ def copy_and_replace(zip_in, zip_out, config):
         # Check if the path is not in the media folder
         if not "media" in path:
             file_content = zip_in.read(path)
-            decoded_content = try_decode(file_content)
-            # Replace specified content
-            for replace_duo in config["ReplaceString"]:
-                # test = file_content.find(replace_duo[0])
-                    # findall(replace_duo[0], file_content)
-                # print(test)
-                #if findall(replace_duo[0], file_content):
-                # if replace_duo[0] in file_content:
-                if search(replace_duo[0], decoded_content):
-                    textnote += f"Legacy TextObject Found: {replace_duo[0]} in {path}, "
-                '''
-                if replace_duo[1] in config["case-unsensitive"]:
-                    file_content = sub(replace_duo[0], replace_duo[1], file_content, flags=IGNORECASE)
-                else:
-                    file_content = sub(replace_duo[0], replace_duo[1], file_content)
-                '''
             # Copy file into new document
             zip_out.writestr(path, file_content)
     return textnote
+
 
 def try_decode(content):
     encodings = ['utf-8', 'latin-1']  # Add more encodings if necessary
@@ -401,6 +391,7 @@ def try_decode(content):
         except UnicodeDecodeError:
             continue
     return None
+
 
 def resize_image(input_image_path, output_image_folder, reference_image_path):
     '''
@@ -453,7 +444,8 @@ def resize_image(input_image_path, output_image_folder, reference_image_path):
         new_image_path = ''
 
     return new_image_path
-    
+
+
 def replace_header_images(zip_in, zip_out, config, note):
     '''
     Search for images in the header and replace them with the logo
@@ -490,9 +482,8 @@ def replace_header_images(zip_in, zip_out, config, note):
             # Disable error from using \S\s in a binary string which is needed for regex
             # Get every target image
             image_locations = findall(b'Target="media[\S\s]*?"', zip_in.read(file))
-            # print('image_locations', image_locations) # FOR TESTING - DELETE AFTER
+
             if len(image_locations) > 1:
-                # print(">>Changing multiple header images!") # FOR TESTING - DELETE AFTER
                 warning = "Warning: Multiple images found in header"
             for image_location in image_locations:
                 image_location = image_location[image_location.find(b"media"):-1].decode("ascii")
@@ -504,7 +495,7 @@ def replace_header_images(zip_in, zip_out, config, note):
                         continue
 
                     header_image_path = f"{config['filetype']}/{image_location}"
-                    
+
                     # Add replaced image path for output
                     images_replaced_path.append(header_image_path)
 
@@ -513,11 +504,12 @@ def replace_header_images(zip_in, zip_out, config, note):
                     zip_in.extract(zip_image_location, path=config['ImagesFolder'])
 
                     # Resize image to fit in the extracted's image container
-                    new_image_path = resize_image(config['NewLogoPath'], config['ImagesFolder'], config['ImagesFolder'] + zip_image_location)
+                    new_image_path = resize_image(config['NewLogoPath'], config['ImagesFolder'],
+                                                  config['ImagesFolder'] + zip_image_location)
 
                     # Delete extracted image
                     os.remove(config['ImagesFolder'] + zip_image_location)
-                    
+
                     if not header_image_path in zip_out.namelist():
                         zip_out.write(new_image_path, header_image_path)
                         note += f"Replaced header image {header_image_path},"
@@ -581,7 +573,7 @@ def check_header_images(zip_in, config, note):
                 alternative_old_logo_size = zip_in.getinfo(
                     image_location).file_size
                 note += f'''Found alternative image in {image_location
-                    } with size {alternative_old_logo_size} bytes, '''
+                } with size {alternative_old_logo_size} bytes, '''
                 alternative_old_logo_found = True
     if not alternative_old_logo_found:
         note += "No image in header,"
@@ -626,7 +618,7 @@ def place_logo_header(zip_in, zip_out, config):
         note, warning, header_image_paths = replace_header_images(zip_in, zip_out, config, note)
     else:
         note = check_header_images(zip_in, config, note)
-        
+
     if headercount == 0:
         status = "No Header"
 
@@ -643,7 +635,7 @@ def place_logo_header(zip_in, zip_out, config):
     num_files = len(files_in_folder)
 
     # Add header image(s) to the catalog (if they're unique)
-    if(config['CompareLogoByPixels'] and num_files > 0):
+    if (config['CompareLogoByPixels'] and num_files > 0):
 
         for image_location in header_images[file_name]:
             # Extract header image
@@ -657,13 +649,14 @@ def place_logo_header(zip_in, zip_out, config):
             # Cycle through the entire catalog and check if header image is already present
             for logo in logo_locations:
                 # Compare header image with logo
-                logo_is_present = compare_images(config["BetweenFolder"] + image_location, config["FoundLogosFolder"] + logo)
+                logo_is_present = compare_images(config["BetweenFolder"] + image_location,
+                                                 config["FoundLogosFolder"] + logo)
 
                 if (logo_is_present):
                     break
 
             # Add image to the logo catalog folder
-            if(not logo_is_present):
+            if (not logo_is_present):
                 different_logos_found += 1
                 renamed_path = f'{config["BetweenFolder"]}{os.path.dirname(image_location)}/logo_{different_logos_found}{file_extension}'
                 os.rename(config["BetweenFolder"] + image_location, renamed_path)
@@ -673,87 +666,94 @@ def place_logo_header(zip_in, zip_out, config):
             zip_image_base_directory = image_location.split('/')[0]
             shutil.rmtree(config["BetweenFolder"] + zip_image_base_directory)
 
-    
-
-            
     return status, note, warning
 
+
 def place_logo_body(file_in, file_out, config):
-        file_path = file_in
-        note = ''
+    file_path = file_in
+    note = ''
+    isExcel = False
 
+    new_file_path = os.path.basename(file_path)
+
+    if (file_in.endswith('.docx')):
         doc = Document(file_path)
-        new_file_path = os.path.basename(file_path)
-        doc.save((config["BetweenFolder"]) + new_file_path)
+        header_images_paths = header_images[new_file_path]
+    elif (file_in.endswith('.xls') or file_in.endswith('.xlsx')):
+        doc = openpyxl.load_workbook(file_path)
+        header_images_paths = []
+        isExcel = True
 
-        # Open input document and new document
-        with ZipFile(open((config["BetweenFolder"]) + new_file_path, "rb")) as zip_in:
-            with ZipFile(file_out, "w", ZIP_DEFLATED) as zip_out:
-                header_images_paths = header_images[new_file_path]
-                
-                # Copy contents to zip_out
-                for path in zip_in.namelist():
-                    if not 'media' in path:
-                        file_content = zip_in.read(path)
+    doc.save((config["BetweenFolder"]) + new_file_path)
 
-                        # Copy file into new document
-                        zip_out.writestr(path, file_content)
+    # Open input document and new document
+    with ZipFile(open((config["BetweenFolder"]) + new_file_path, "rb")) as zip_in:
+        with ZipFile(file_out, "w", ZIP_DEFLATED) as zip_out:
 
-                # Get all image locations without the header
-                image_locations = [item for item in zip_in.namelist() if '/media/' in item]
+            # Copy contents to zip_out
+            for path in zip_in.namelist():
+                if not 'media' in path:
+                    file_content = zip_in.read(path)
 
-                # Check that header images exist
-                if (len(header_images_paths) != 0):
-                    # Remove from image_location header paths
-                    for header_image in header_images_paths:
-                        if (header_image in image_locations):
-                                image_locations.remove(header_image)
+                    # Copy file into new document
+                    zip_out.writestr(path, file_content)
 
-                # Extract all images besides the header logo
-                zip_in.extractall(config["BetweenFolder"], members=image_locations)
+            # Get all image locations without the header
+            image_locations = [item for item in zip_in.namelist() if '/media/' in item]
 
-                # Get all logo paths from the catalog
-                logo_locations = os.listdir(config["FoundLogosFolder"])
+            # Check that header images exist
+            if (len(header_images_paths) != 0):
+                # Remove from image_location header paths
+                for header_image in header_images_paths:
+                    if (header_image in image_locations):
+                        image_locations.remove(header_image)
 
-                # Check that there's any images
-                if (len(image_locations) != 0):
-                    # Compare all images with the logo catalog
-                    for image in image_locations:
-                        for logo in logo_locations:
-                            similar = compare_images(config["FoundLogosFolder"] + logo, config["BetweenFolder"] + image)
-                            
-                            # Replace image if similar
-                            if (similar):
-                                zip_image_location = f'{os.path.dirname(image)}/{os.path.basename(image)}'
+            # Extract all images besides the header logo
+            zip_in.extractall(config["BetweenFolder"], members=image_locations)
 
-                                # Resize logo from catalog
-                                logo_replacement_path = resize_image(config['NewLogoPath'], config['ImagesFolder'], config["BetweenFolder"] + image)
+            # Get all logo paths from the catalog
+            logo_locations = os.listdir(config["FoundLogosFolder"])
 
-                                # Add similar images to zip_out
-                                zip_out.write(logo_replacement_path, zip_image_location, compress_type=ZIP_DEFLATED)
+            # Check that there's any images
+            if (len(image_locations) != 0):
+                # Compare all images with the logo catalog
+                for image in image_locations:
+                    for logo in logo_locations:
+                        similar = compare_images(config["FoundLogosFolder"] + logo, config["BetweenFolder"] + image)
 
-                                # Add note
-                                note += f'Replaced similar image at: {image} ' 
+                        # Replace image if similar
+                        if (similar):
+                            zip_image_location = f'{os.path.dirname(image)}/{os.path.basename(image)}'
 
-                                break
+                            # Resize logo from catalog
+                            logo_replacement_path = resize_image(config['NewLogoPath'], config['ImagesFolder'],
+                                                                 config["BetweenFolder"] + image)
 
-                if (len(image_locations) != 0):
-                    zip_image_base_directory = image.split('/')[0] 
-                elif(len(header_images_paths) != 0):
-                    zip_image_base_directory = header_images_paths[0].split('/')[0]
-                else:
-                    zip_image_base_directory = None
+                            # Add similar images to zip_out
+                            zip_out.write(logo_replacement_path, zip_image_location, compress_type=ZIP_DEFLATED)
 
-                # Delete extracted images
-                if (zip_image_base_directory is not None):
-                    if (os.path.exists(config["BetweenFolder"] + zip_image_base_directory)):
-                        shutil.rmtree(config["BetweenFolder"] + zip_image_base_directory)
+                            # Add note
+                            note += f'Replaced similar image at: {image} '
 
-                # Add missing images
-                add_missing_images(zip_in, zip_out)
+                            break
 
-        # Remove file from betweenFolder
-        os.remove((config["BetweenFolder"]) + new_file_path)
+            if (len(image_locations) != 0):
+                zip_image_base_directory = image.split('/')[0]
+            elif (len(header_images_paths) != 0):
+                zip_image_base_directory = header_images_paths[0].split('/')[0]
+            else:
+                zip_image_base_directory = None
+
+            # Delete extracted images
+            if (zip_image_base_directory is not None):
+                if (os.path.exists(config["BetweenFolder"] + zip_image_base_directory)):
+                    shutil.rmtree(config["BetweenFolder"] + zip_image_base_directory)
+
+            # Add missing images
+            add_missing_images(zip_in, zip_out)
+    # Remove file from betweenFolder
+    os.remove((config["BetweenFolder"]) + new_file_path)
+
 
 def get_filetype(file, config):
     '''
@@ -843,7 +843,7 @@ def start_com_servers(filetypes):
         print("Starting PowerPoint COM server")
         power_point = comtypes.client.CreateObject("PowerPoint.Application")
         # Trying to hide the window will result in the program crashing
-        #power_point.Visible = False
+        # power_point.Visible = False
     return word, excel, power_point
 
 
@@ -895,7 +895,7 @@ def convert_to_pdf(file_in, config, word, excel, power_point):
     # Use the correct COM server
     if config["filetype"] == "word":
         doc = word.Documents.Open(file_in)
-        doc.SaveAs(config["PDFPath"], FileFormat = FILE_FORMAT_PDF_WORD)
+        doc.SaveAs(config["PDFPath"], FileFormat=FILE_FORMAT_PDF_WORD)
         doc.Close()
     elif config["filetype"] == "xl":
         workbook = excel.Workbooks.Open(file_in)
@@ -906,13 +906,13 @@ def convert_to_pdf(file_in, config, word, excel, power_point):
         presentation.ExportAsFixedFormat(config["PDFPath"], FILE_FORMAT_PDF_PPT)
         presentation.close()
 
+
 def process_file_word(file_in, file_out, config):
     file_path = file_in
     file_out_path = file_out
 
     # log variables
-    text_note = ''
-    status, note, warning = '', '', ''
+    status, note, warning, text_note = '', '', '', ''
 
     # Convert file to docx if it ends in doc
     if file_path.endswith('.doc') or file_path.endswith('.docm'):
@@ -925,7 +925,7 @@ def process_file_word(file_in, file_out, config):
     doc = Document(file_path)
     prop = doc.core_properties
     for replace_duo in config["ReplaceString"]:
-        warning =  docx_replace(doc, replace_duo[0], replace_duo[1],  warning)
+        warning = docx_replace(doc, replace_duo[0], replace_duo[1], warning)
         prop.title = prop.title.replace(replace_duo[0], replace_duo[1])
 
     new_file_path = os.path.basename(file_path)
@@ -936,8 +936,6 @@ def process_file_word(file_in, file_out, config):
         with ZipFile(file_out_path, "w", ZIP_DEFLATED) as zip_out:
             # copy document and replace content
             copy_and_replace(zip_in, zip_out, config)
-            # check for logo
-            status, note, warning = place_logo_header(zip_in, zip_out, config)
             # Add missing images
             add_missing_images(zip_in, zip_out)
 
@@ -947,29 +945,292 @@ def process_file_word(file_in, file_out, config):
     log.write(f"{file_in};{status};{note};{text_note};{warning}\n")
 
 
-def process_file_excel(file_in, file_out, config):
-    file_path = file_in
+def copy_and_replace_content_excel(file_in, file_out, config):
+    """
+    Perform copying the content from the input file, replaces imagery and text
 
-    if file_path.endswith('.xls'):
-        # Convert .xls file to .xlsx and update file path
+    Parameters
+    ----------
+    file_in: string
+        path to the input file
+    file_out: string
+        path to the output file
+    config: dict
+        Configuration file
+
+    Returns None
+    -------
+    """
+
+    new_file_path = os.path.basename(file_in)
+
+    # Open the input Zip file for reading and the output Zip file for writing
+    with ZipFile(open(config['InputFolder'] + '\\' + new_file_path, 'rb')) as zip_in:
+        with ZipFile(file_out, 'w') as zip_out:
+
+            # Copy the content of the input file except the media folder and xml files containing strings to be replaced
+            # on the worksheets
+            for path in zip_in.namelist():
+                if 'media' not in path:
+                    if 'worksheets' in path or 'sharedStrings' in path:
+                        if path.endswith('xml'):
+                            # print(f' NOT COPIED: {path}')  # TESTING
+                            continue
+                    file_content = zip_in.read(path)
+                    zip_out.writestr(path, file_content)
+
+            # Extract all images from the workbook stored in the media folder
+            image_locations = [img_loc for img_loc in zip_in.namelist() if '/media/' in img_loc]
+            # Extract all images
+            zip_in.extractall(config['BetweenFolder'], members=image_locations)
+
+            # Get all logo paths from the catalog
+            logo_locations = os.listdir(config['FoundLogosFolder'])
+
+            # Check if there are any images in the presentation
+            if len(image_locations) > 0:
+                # Compare all images with the logo catalog
+                for image_location in image_locations:
+                    # print(image_location)
+                    for logo_location in logo_locations:
+                        # Do similarity check
+                        similarity = compare_images(
+                            image_path1=config['FoundLogosFolder'] + logo_location,  # Path for the first image
+                            image_path2=config['BetweenFolder'] + image_location  # Path for the second image
+                        )
+
+                        # If images are similar, replace them
+                        if similarity:
+                            # Print similarity result for testing
+                            # print(f'SIMILARITY CHECK for {image_location} WITH {logo_location} RESULTED --> '
+                                  # f'{similarity}')
+                            zip_image_location = f'{os.path.dirname(image_location)}/{os.path.basename(image_location)}'
+                            # print(f'ZIP IMAGE LOCATION: {zip_image_location}')  # Print Zip Image Location for testing
+
+                            # Resize the logo from catalog
+                            resized_image_path = resize_image(
+                                input_image_path=config['NewLogoPath'],  # Path to 'replacementLogo.png'
+                                output_image_folder=config['ImagesFolder'],  # Path to save resized image
+                                reference_image_path=config['BetweenFolder'] + image_location  # Path to reference image
+                            )
+
+                            # Add new resized image to archive under the original image file name
+                            zip_out.write(resized_image_path, zip_image_location, compress_type=ZIP_DEFLATED)
+
+                            break  # Break out of the inner loop
+
+                    else:  # If no similarity detected add the image file to the output archive
+                        if image_location not in zip_out.namelist():
+                            image_data = zip_in.read(image_location)
+                            zip_out.writestr(image_location, image_data)
+
+            # Perform text replacement in the xml files
+            _replace_text_excel(zip_in=zip_in, zip_out=zip_out, config=config)
+
+
+def _replace_text_excel(zip_in, zip_out, config):
+    """
+    Finds elements in the input files that contain outdated text and replaces them
+
+    Parameters
+    ----------
+    zip_in: Input Zip archive
+    zip_out: Output Zip archive
+    config: dict - Configuration file
+
+    Returns None
+    -------
+    """
+
+    prefix_map = {
+        'xmlns': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+    }  # Mapping of namespaces in the XML
+
+    # Iterate through all files in the input archive
+    for path in zip_in.namelist():
+        # If worksheets or the sharedStrings XML files are present in the archive
+        if '/worksheets/' in path or 'sharedStrings' in path:
+            if path.endswith('xml'):
+
+                xml_tree = zip_in.read(path)  # Open and read in the XML file from path
+                root = lxml.etree.fromstring(xml_tree)  # Parse the XML tree
+
+                # Variable to hold xml elements that will need to be string validated
+                string_elements = []
+
+                if 'sharedStrings' in path:
+                    # Find all t - 'text' tags in the sharedStrings XML file
+                    string_elements = root.findall('.//xmlns:t', namespaces=prefix_map)
+                else:
+                    # In the worksheet XML find 'oddHeader' and 'oddFooter' elements that might contain strings that
+                    # need to be replaced
+                    odd_headers = root.findall('.//xmlns:oddHeader', namespaces=prefix_map)
+                    string_elements.extend(odd_headers)
+                    odd_footers = root.findall('.//xmlns:oddFooter', namespaces=prefix_map)
+                    string_elements.extend(odd_footers)
+
+                # If elements with text were found pass them to the replace string function
+                if string_elements is not None:
+                    _replace_string_excel(elements=string_elements, config=config)
+
+                # Write the XML with replaced text to the output file at the path
+                replaced_text_xml = lxml.etree.tostring(root, encoding='UTF-8')
+                zip_out.writestr(path, replaced_text_xml)
+
+
+def _replace_string_excel(elements, config):
+    """
+    Performs text replacement on XML elements with text values
+
+    Parameters
+    ----------
+    elements: List
+        List of XML elements with text value to be replaced
+    config: dict
+        Configuration file
+
+    Returns None
+    -------
+    """
+
+    for element in elements:
+        for value in config['ReplaceString']:
+            replaced_value = element.text.replace(value[0], value[1])
+            if replaced_value != element.text:
+                element.text = replaced_value
+
+
+def process_file_excel(file_in, file_out, config):
+    file_input_path = file_in  # Input file path
+
+    # If file in wrong format then convert .xls or .xlsm file to .xlsx and update file path
+    if file_input_path.endswith('.xls') or file_input_path.endswith('.xlsm'):
+        file_input_path = convert_file(file_in, FILE_FORMAT_XLSX)
+        # Update the output basename accordingly so it will be saved as 'xlsx'
+        file_out = file_out.replace(file_out.rsplit(".")[-1], 'xlsx')
+
+    copy_and_replace_content_excel(file_in=file_input_path, file_out=file_out, config=config)
+
+
+    """worksheets_with_header = set()
+
+    original_image_paths = get_file_image_paths(file_in)  # Get file image locations from input file
+    print(f'IMAGE PATHS: {original_image_paths}')
+
+    if file_path.endswith('.xls') or file_path.endswith('.xlsm'):
+        # Convert .xls or .xlsm file to .xlsx and update file path
         file_path = convert_file(file_path, FILE_FORMAT_XLSX)
 
     # Get workbook from path
     workbook = openpyxl.load_workbook(file_path)
-    
+
+    # Store header methods
+    headers = ['oddHeader.left', 'oddHeader.center', 'oddHeader.right', 'oddFooter.left', 'oddFooter.center',
+               'oddFooter.right']
+
+    # Create logo image -- DELETE IF NOT ADDING A ROW TO THE FILE (FOR THE HEADER IMAGE)
+    logo = openpyxl.drawing.image.Image(config['NewLogoPath'])
+    logo.anchor = 'A1'
+    logo.width = 265.3
+    logo.height = 200
+
+    # log variables
+    status, note, warning, text_note = '', '', '', ''
+
     # Cycle through sheets
     for worksheet in workbook.worksheets:
-        print(worksheet.cell(1, 1).value)
+        # Cycle through headers and replace text
+        for header in headers:
+            header_text = eval(f'worksheet.{header}.text')
 
-    # print(worksheets)
+            if header_text is not None:
+                for value in config["ReplaceString"]:
+                    header_text = header_text.replace(value[0], value[1])
+
+                    worksheets_with_header.add(worksheet.title)
+                    # Set new text depending on the current header
+                    match headers.index(header):
+                        case 0:
+                            worksheet.oddHeader.left.text = header_text
+                        case 1:
+                            worksheet.oddHeader.center.text = header_text
+                        case 2:
+                            worksheet.oddHeader.right.text = header_text
+                        case 3:
+                            worksheet.oddFooter.left.text = header_text
+                        case 4:
+                            worksheet.oddFooter.center.text = header_text
+                        case 5:
+                            worksheet.oddFooter.right.text = header_text
+
+        # Cycle through rows and replace text
+        for row in worksheet.iter_rows():
+            for cell in row:
+                cell_value = cell.value
+                if cell_value and isinstance(cell_value, str):
+                    for value in config["ReplaceString"]:
+                        cell_value = cell_value.replace(value[0], value[1])
+                        if cell_value != cell.value:
+                            cell.value = cell_value
+
+    # Add logo to worksheet -- DELETE IF NOT ADDING A ROW TO THE FILE (FOR THE HEADER IMAGE)
+    # Note: Scaling a row's dimension breaks some content of the page
+    # for worksheet_name in worksheets_with_header:
+    #     ws = workbook[worksheet_name] 
+    #     ws.insert_rows(1, 6)
+    #     ws.row_dimensions[1].height = 180
+    #     ws.add_image(logo)
+
+    #new_file_path = config['BetweenFolder'] + os.path.basename(file_out)
+    workbook.save(file_out)
+
+    #after_image_paths = get_file_image_paths(file_out)
+
+    # Add drawings back into the file
+    # add_excel_drawings_to_file(file_path, new_file_path)
+
+    log.write(f"{file_in};{status};{note};{text_note};{warning}\n")"""
 
     return True
+
+
+def get_file_image_paths(file_path):
+    image_paths = []
+    with ZipFile(file_path, "r") as zip_in:
+        for path in zip_in.namelist():
+            if 'media' in path:
+                image_paths.append(path)
+    return image_paths
+
+
+# DELETE IF ADDING THE SHAPES WITH THE FUNCTION IN XML_TEST.PY
+def add_excel_drawings_to_file(original_file, file_in, file_out):
+    # Open input document and new document
+    with ZipFile(file_in, "r") as zip_in:
+        with ZipFile(file_out, "w", ZIP_DEFLATED) as zip_out:
+            # Copy contents to zip_out
+            for path in zip_in.namelist():
+                if 'drawings' not in path:
+                    file_content = zip_in.read(path)
+                    zip_out.writestr(path, file_content)
+
+            with ZipFile(original_file, "r", ZIP_DEFLATED) as zip_original:
+                # Copy drawings from original file to zip_out
+                for path_original in zip_original.namelist():
+                    if 'drawings' in path_original:
+                        file_content = zip_original.read(path_original)
+                        zip_out.writestr(path_original, file_content)
+
+    return True
+
 
 def process_file_powerpoint(file_in, file_out, config):
     return True
 
+
 def process_file_pdf(file_in, file_out, config):
     return True
+
 
 def process_file(file_in, file_out, config):
     '''
@@ -998,6 +1259,7 @@ def process_file(file_in, file_out, config):
         case '.pdf':
             process_file_pdf(file_in, file_out, config)
 
+
 def add_missing_images(zip_in, zip_out):
     """
     Adds missing images from one Zip archive to another.
@@ -1011,13 +1273,14 @@ def add_missing_images(zip_in, zip_out):
         The output ZipFile object where the missing images will be added.
     """
     # Get a list of image filenames from zip_in
-    image_files = [item.filename for item in zip_in.infolist() if item.filename.startswith('word/media/')]
+    image_files = [item.filename for item in zip_in.infolist() if '/media/' in item.filename]
 
     # Check if the image already exists in zip_out, and if not, add it
     for image_file in image_files:
         if image_file not in zip_out.namelist():
             image_data = zip_in.read(image_file)
             zip_out.writestr(image_file, image_data)
+
 
 def convert_file(file, new_file_format):
     # Get the folder path and the base filename of the original file
@@ -1103,7 +1366,7 @@ def main():
         config = map_config(sys.argv[1])
 
         # Clean the project before starting (used for testing)
-        delete_all_contents(config) 
+        delete_all_contents(config)
 
         # Check PDF conversion
         pdf_conversion = False
@@ -1121,7 +1384,6 @@ def main():
             # End timer and output time
             print(f"Starting server took {time() - start_time:.3f} seconds")
 
-
         # Check if output folder exists and create it if neccessary
         if not os.path.isdir(config["OutputFolder"]):
             os.mkdir(config["OutputFolder"])
@@ -1136,16 +1398,16 @@ def main():
             log = prepare_log(config)
 
             # Decide on output folder
-            if(config["CompareLogoByPixels"]):
+            if (config["CompareLogoByPixels"]):
                 output_folder = config["HeaderImageReplacedFoler"]
-            else: 
+            else:
                 output_folder = config["OutputFolder"]
 
             # Get total file count
             file_count = len(os.listdir(config['InputFolder']))
 
             # Loop over every file in the directory
-            for file_number, file  in enumerate(os.listdir(config["InputFolder"])):
+            for file_number, file in enumerate(os.listdir(config["InputFolder"])):
                 # Start timer
                 start_time = time()
 
@@ -1169,9 +1431,9 @@ def main():
 
                 # Format the OldLogoPath
                 config["OldLogoPath_formatted"] = config["OldLogoPath"].format(
-                    filetype = config["filetype"])
+                    filetype=config["filetype"])
                 config["LegacyBHLogoPath_formatted"] = config["LegacyBHLogoPath"].format(
-                    filetype = config["filetype"])
+                    filetype=config["filetype"])
 
                 # Process the file if it's not empty
                 print(f"File {file_number}/{file_count} -- Processing {file}")
@@ -1182,7 +1444,7 @@ def main():
                         print(f"File skipped because it's empty: {file}")
                         log.write(f"{file_in};-;File skipped because it's empty!\n")
                 except Exception as e:
-                    print(f'File failed to process! File name: {file}')
+                    print(f'File failed to process! File name: {file}\nError: {e}')
                     log.write(f"{file_in};-;File failed to process!;Error:{e}\n")
                 # End timer and output time
                 print(f"Processing took {time() - start_time:.3f} seconds")
@@ -1205,9 +1467,9 @@ def main():
             log.close()
         else:
             print("Specify an existing input folder containing the documents and an output folder")
-        
+
         # Loop through all the files, replacing any image inside of the file's body that matches any logo in the catalog
-        if(config["CompareLogoByPixels"]):
+        if (config["CompareLogoByPixels"]):
             body_image_replace = time()
             # Loop over every file in the directory
             for file_number_body, file_body in enumerate(os.listdir(config["HeaderImageReplacedFoler"])):
@@ -1228,22 +1490,24 @@ def main():
                 # Replace image inside body
                 print(f'File {file_number_body}/{file_count} -- Replacing body image for: {file_body}')
                 try:
-                    place_logo_body(file_in, file_out, config)
+                    # place_logo_body(file_in, file_out, config)
+                    pass
                 except Exception as e:
                     print(f'Failed replacing the body images for file: {file_body} \nError: {e}')
                     log.write(f"{file_in};-;Failed replacing the body images!;Error:{e}\n")
                 # Remove file from headerImageReplaced folder
-                os.remove(file_in)
-            
+                # os.remove(file_in)
+
         # Close COM Server
         if pdf_conversion:
             quit_com_servers(word, excel, power_point)
 
-        print(f"All done! \nThe script ran for {strftime('%H:%M:%S', gmtime(time() - script_run_time))} seconds\nReplacing the files' body images took: {strftime('%H:%M:%S', gmtime(time() - body_image_replace))} seconds\nTotal image comparisons: {image_comparisons:,}")
+        print(
+            f"All done! \nThe script ran for {strftime('%H:%M:%S', gmtime(time() - script_run_time))} seconds\nReplacing the files' body images took: {strftime('%H:%M:%S', gmtime(time() - body_image_replace))} seconds\nTotal image comparisons: {image_comparisons:,}")
 
     else:
         print("Specify an existing config file")
-    
+
 
 def compare_images(image_path1, image_path2):
     """
@@ -1281,7 +1545,7 @@ def compare_images(image_path1, image_path2):
         deviation = np.mean(np.abs(image1_array - image2_array))
 
         # Pictures are similar if their deviation is lower than 17 
-        similarity = deviation < 10
+        similarity = deviation < 20
 
         # Increment counter
         image_comparisons += 1
@@ -1289,6 +1553,7 @@ def compare_images(image_path1, image_path2):
         print('Image format not supported: ', str(e))
 
     return similarity
+
 
 def map_config(configfile):
     """
@@ -1315,7 +1580,7 @@ def map_config(configfile):
         for line in conf:
             if not line.startswith("//"):
                 if search(r'[\S\s]*? = [\S\s]*?', line) is not None:
-                    (key, val)= line.split(' = ')
+                    (key, val) = line.split(' = ')
                     cfg_dict[key] = val.strip()
                 elif search(r'[\S\s]*? -> [\S\s]*?', line) is not None:
                     line = str(line)
@@ -1323,12 +1588,13 @@ def map_config(configfile):
                     (old, new) = line.split(' -> ')
                     # pylint: disable=W1401
                     # Disable error from using \S\s in a binary string which is needed for regex
-                    #if search(b'[\S\s]*? // case-unsensitive', new) is not None:
+                    # if search(b'[\S\s]*? // case-unsensitive', new) is not None:
                     #    new = (new[0:new.find(b" // case-unsensitive")])
                     #    cfg_dict["case-unsensitive"].append(new)
                     cfg_dict["ReplaceString"].append([old.strip(), new.strip()])
 
     return cfg_dict
+
 
 def delete_folder_contents(folder_path):
     """
@@ -1344,6 +1610,7 @@ def delete_folder_contents(folder_path):
         file_path = os.path.join(folder_path, file_name)
         if os.path.isfile(file_path):
             os.remove(file_path)
+
 
 def delete_all_contents(config):
     """
@@ -1365,7 +1632,6 @@ def delete_all_contents(config):
 
     for folder in folders:
         delete_folder_contents(folder)
-
 
 
 if __name__ == "__main__":

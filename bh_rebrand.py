@@ -622,7 +622,6 @@ def place_logo_header(zip_in, zip_out, config):
 
     file_name = os.path.basename(zip_out.filename)
     header_images[file_name] = header_image_paths
-
     # Filter the file paths that are in 'word/media' 
     files_in_folder = [name for name in zip_in.namelist() if name.startswith('word/media')]
 
@@ -931,6 +930,8 @@ def process_file_word(file_in, file_out, config):
         with ZipFile(file_out_path, "w", ZIP_DEFLATED) as zip_out:
             # copy document and replace content
             copy_and_replace(zip_in, zip_out, config)
+            # check for logo
+            status, note, warning = place_logo_header(zip_in, zip_out, config)
             # Add missing images
             add_missing_images(zip_in, zip_out)
 
@@ -1885,7 +1886,7 @@ def prepare_log(config):
     log.write("Inputfile;Logo;Notes;LegacyText;Warning\n")
 
     print(f"Logging in file {log_name}")
-    return log
+    return log, log_path
 
 
 def main():
@@ -1927,7 +1928,7 @@ def main():
         # Check if input directory exists
         if os.path.isdir(config["InputFolder"]):
             global log;
-            log = prepare_log(config)
+            log, log_path = prepare_log(config)
 
             # Decide on output folder
             if (config["CompareLogoByPixels"]):
@@ -1935,8 +1936,10 @@ def main():
             else:
                 output_folder = config["OutputFolder"]
 
-            # Get total file count
+            # Get total file count and set counter
             file_count = len(os.listdir(config['InputFolder']))
+            file_counter = 1
+            process_file_failure_count = 0
 
             # Loop over every file in the directory
             for file_number, file in enumerate(os.listdir(config["InputFolder"])):
@@ -1968,7 +1971,7 @@ def main():
                     filetype=config["filetype"])
 
                 # Process the file if it's not empty
-                print(f"File {file_number}/{file_count} -- Processing {file}")
+                print(f"File {file_counter}/{file_count} -- Processing {file}")
                 try:
                     if (os.path.getsize(file_in) != 0):
                         process_file(file_in, file_out, config)
@@ -1977,8 +1980,11 @@ def main():
                         log.write(f"{file_in};-;File skipped because it's empty!\n")
                 except Exception as e:
                     print(f'File failed to process! File name: {file}\nError: {e}')
+                    process_file_failure_count += 1
+                    log = open(log_path, "w+", encoding="utf-8")
                     log.write(f"{file_in};-;File failed to process!;Error:{e}\n")
                 # End timer and output time
+                file_counter += 1
                 print(f"Processing took {time() - start_time:.3f} seconds")
 
                 # Convert to PDF
@@ -2003,8 +2009,10 @@ def main():
         # Loop through all the files, replacing any image inside of the file's body that matches any logo in the catalog
         if (config["CompareLogoByPixels"]):
             body_image_replace = time()
+            file_counter = 1
+            body_replace_failure_count = 0
             # Loop over every file in the directory
-            for file_number_body, file_body in enumerate(os.listdir(config["HeaderImageReplacedFoler"])):
+            for file_body in os.listdir(config["HeaderImageReplacedFoler"]):
                 print('Processing file body: ', file_body)
                 # Create input and output path and start file processing
                 file_in = os.path.join(config["HeaderImageReplacedFoler"], file_body)
@@ -2020,13 +2028,17 @@ def main():
                     continue
 
                 # Replace image inside body
-                print(f'File {file_number_body}/{file_count} -- Replacing body image for: {file_body}')
+                print(f'File {file_counter}/{file_count} -- Replacing body image for: {file_body}')
                 try:
-                    # place_logo_body(file_in, file_out, config)
+                    place_logo_body(file_in, file_out, config)
                     pass
                 except Exception as e:
                     print(f'Failed replacing the body images for file: {file_body} \nError: {e}')
+                    body_replace_failure_count += 1
+                    log = open(log_path, "w+", encoding="utf-8")
                     log.write(f"{file_in};-;Failed replacing the body images!;Error:{e}\n")
+                
+                file_counter += 1
                 # Remove file from headerImageReplaced folder
                 # os.remove(file_in)
 
@@ -2035,7 +2047,7 @@ def main():
             quit_com_servers(word, excel, power_point)
 
         print(
-            f"All done! \nThe script ran for {strftime('%H:%M:%S', gmtime(time() - script_run_time))} seconds\nReplacing the files' body images took: {strftime('%H:%M:%S', gmtime(time() - body_image_replace))} seconds\nTotal image comparisons: {image_comparisons:,}")
+            f"All done! \nThe script ran for {strftime('%H:%M:%S', gmtime(time() - script_run_time))} seconds\nReplacing the files' body images took: {strftime('%H:%M:%S', gmtime(time() - body_image_replace))} seconds\nTotal image comparisons: {image_comparisons:,}\nProcessed file failed: {process_file_failure_count}\nBody image replacement fails count:{body_replace_failure_count}")
 
     else:
         print("Specify an existing config file")
@@ -2156,7 +2168,7 @@ def delete_all_contents(config):
     """
     folders = [
         config['BetweenFolder'],
-        config['HeaderImageReplacedFoler'],
+        # config['HeaderImageReplacedFoler'],
         # config['FoundLogosFolder'],
         config['ImagesFolder'],
         config['OutputFolder']

@@ -12,31 +12,26 @@ Applies to company logo, company name, document font, brand colors
 import sys
 import os
 import re
+import xml
 from time import time, strftime, gmtime
 from datetime import datetime
-from re import sub, search, findall, IGNORECASE
+from re import search, findall
 from zipfile import ZipFile, ZIP_DEFLATED
 
 import lxml.etree
-import pandas
-import win32com.client
-import xlwings as xlwings
+import pptx
 from docx import Document
-from docx.oxml.ns import qn
-from docx.opc.constants import RELATIONSHIP_TYPE as RT
 import comtypes.client
-from docx.table import _Cell
 import xml.etree.ElementTree as ET
 import win32com.client as win32
 import shutil
 import openpyxl
-import xlsxwriter
-from openpyxl.drawing.image import Image as xlsxImage
-from openpyxl.drawing.spreadsheet_drawing import SpreadsheetDrawing
-# import xlrd
 import pathlib
-from PIL import Image, ImageOps
+from PIL import Image
 import numpy as np
+from pptx import Presentation
+from pdf2docx import Converter as ConverterPdf2Docx
+
 
 FILE_FORMAT_PDF_WORD = 17
 FILE_FORMAT_PDF_EXCEL = 0
@@ -1753,13 +1748,14 @@ def process_file_pdf(file_in, file_out, config):
 
     process_file_word(file_in=config['InputFolder'] + f'/{file_name}.docx', file_out=file_out, config=config)
 
-    """wdFormatPDF = 17
+    wdFormatPDF = 17
 
     word = comtypes.client.CreateObject('Word.Application')
     doc = word.Documents.Open(file_out)
     doc.SaveAs('test.pdf', wdFormatPDF)
     doc.Close()
-    word.Quit()"""
+    word.Quit()
+
 #def process_file_powerpoint(file_in, file_out, config):
    #return True
 

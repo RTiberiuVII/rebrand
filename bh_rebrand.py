@@ -1812,7 +1812,7 @@ def main():
             process_file_failure_count = 0
 
             # Sort files to process Word files (.docx, .doc, .docm) first before other file types
-            sorted_files = sorted(os.listdir(config["InputFolder"], key=lambda x: (not x.lower().endswith((".docx", ".doc", ".docm")), x)))
+            sorted_files = sorted(os.listdir(config["InputFolder"]), key=lambda x: (not x.lower().endswith((".docx", ".doc", ".docm")), x))
 
             # Loop over every file in the directory
             for file in sorted_files:
@@ -1886,7 +1886,7 @@ def main():
             body_replace_failure_count = 0
 
             # Sort files to process Word files (.docx, .doc, .docm) first before other file types
-            sorted_files = sorted(os.listdir(config["HeaderImageReplacedFoler"], key=lambda x: (not x.lower().endswith((".docx", ".doc", ".docm")), x)))
+            sorted_files = sorted(os.listdir(config["HeaderImageReplacedFoler"]), key=lambda x: (not x.lower().endswith((".docx", ".doc", ".docm")), x))
 
             # Loop over every file in the directory
             for file_body in sorted_files:
@@ -2043,7 +2043,7 @@ def delete_all_contents(config):
     """
     folders = [
         config['BetweenFolder'],
-        # config['HeaderImageReplacedFoler'],
+        config['HeaderImageReplacedFoler'],
         # config['FoundLogosFolder'],
         config['ImagesFolder'],
         config['OutputFolder']

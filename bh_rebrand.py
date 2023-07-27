@@ -1513,13 +1513,13 @@ def process_file_pdf(file_in, file_out, config):
 
     process_file_word(file_in=config['InputFolder'] + f'/{file_name}.docx', file_out=file_out, config=config)
 
-    """wdFormatPDF = 17
+    wdFormatPDF = 17
 
     word = comtypes.client.CreateObject('Word.Application')
     doc = word.Documents.Open(file_out)
     doc.SaveAs('test.pdf', wdFormatPDF)
     doc.Close()
-    word.Quit()"""
+    word.Quit()
 
 
 def process_file(file_in, file_out, config):
@@ -1643,7 +1643,7 @@ def prepare_log(config):
     log.write("Inputfile;Logo;Notes;LegacyText;Warning\n")
 
     print(f"Logging in file {log_name}")
-    return log
+    return log, log_path
 
 
 def main():
@@ -1685,7 +1685,7 @@ def main():
         # Check if input directory exists
         if os.path.isdir(config["InputFolder"]):
             global log;
-            log = prepare_log(config)
+            log, log_path = prepare_log(config)
 
             # Decide on output folder
             if (config["CompareLogoByPixels"]):
@@ -1738,6 +1738,7 @@ def main():
                 except Exception as e:
                     print(f'File failed to process! File name: {file}')
                     print(f"{file_in};-;File failed to process!;Error:{e}\n")
+                    log = open(log_path, "w+", encoding="utf-8")
                     log.write(f"{file_in};-;File failed to process!;Error:{e}\n")
                 # End timer and output time
                 print(f"Processing took {time() - start_time:.3f} seconds")
@@ -1784,9 +1785,9 @@ def main():
                 print(f'File {file_number_body}/{file_count} -- Replacing body image for: {file_body}')
                 try:
                     place_logo_body(file_in, file_out, config)  # DISABLED FOR TESTING
-                    print("TEST")
                 except Exception as e:
                     print(f'Failed replacing the body images for file: {file_body} \nError: {e}')
+                    log = open(log_path, "w+", encoding="utf-8")
                     log.write(f"{file_in};-;Failed replacing the body images!;Error:{e}\n")
                 # Remove file from headerImageReplaced folder
                 os.remove(file_in)
@@ -1900,7 +1901,7 @@ def delete_folder_contents(folder_path):
     Returns:
         None
     """
-    for file_name in os.listdir(folder_path):
+    for file_name in os.listdir(folder_path): 
         file_path = os.path.join(folder_path, file_name)
         if os.path.isfile(file_path):
             os.remove(file_path)
@@ -1919,7 +1920,7 @@ def delete_all_contents(config):
     folders = [
         config['BetweenFolder'],
         config['HeaderImageReplacedFoler'],
-        # config['FoundLogosFolder'],
+        config['FoundLogosFolder'],
         config['ImagesFolder'],
         config['OutputFolder']
     ]

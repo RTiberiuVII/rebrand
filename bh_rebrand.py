@@ -682,6 +682,10 @@ def place_logo_body(file_in, file_out, config):
         doc = openpyxl.load_workbook(file_path)
         header_images_paths = []
         isExcel = True
+    elif file_in.endswith('.pptx'):
+        # Move file and finish executing function
+        os.rename(file_in, file_out)
+        return True
 
     doc.save((config["BetweenFolder"]) + new_file_path)
 
@@ -753,6 +757,11 @@ def place_logo_body(file_in, file_out, config):
     # Remove file from betweenFolder
     os.remove((config["BetweenFolder"]) + new_file_path)
 
+    # Remove file from original location
+    os.remove(file_in)
+
+
+
 
 def get_filetype(file, config):
     """
@@ -781,6 +790,8 @@ def get_filetype(file, config):
         config["filetype"] = "xl"
     elif ".ppt" in file:
         config["filetype"] = "ppt"
+    elif ".pdf" in file:
+        config["filetype"] = "pdf"
     else:
         # Remove "filetype" from config if filetype is unknown
         try:
@@ -1814,6 +1825,7 @@ def main():
             # Sort files to process Word files (.docx, .doc, .docm) first before other file types
             sorted_files = sorted(os.listdir(config["InputFolder"]), key=lambda x: (not x.lower().endswith((".docx", ".doc", ".docm")), x))
 
+
             # Loop over every file in the directory
             for file in sorted_files:
                 # Start timer
@@ -2051,7 +2063,6 @@ def delete_all_contents(config):
 
     for folder in folders:
         delete_folder_contents(folder)
-
 
 if __name__ == "__main__":
     main()

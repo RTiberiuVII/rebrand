@@ -674,17 +674,19 @@ def place_logo_body(file_in, file_out, config):
     isExcel = False
 
     new_file_path = os.path.basename(file_path)
+    skip_file_formats = ('.pptx', '.pdf', '.xlsx', '.xls')
 
     if file_in.endswith('.docx'):
         doc = Document(file_path)
         header_images_paths = header_images[new_file_path]
-    elif file_in.endswith('.xls') or file_in.endswith('.xlsx'):
-        doc = openpyxl.load_workbook(file_path)
-        header_images_paths = []
-        isExcel = True
-    elif file_in.endswith('.pptx') or file_in.endswith('.pdf'):
+    elif file_in.endswith(skip_file_formats):
         # Move file and finish executing function
         os.rename(file_in, file_out)
+    # Process excel files
+    # elif file_in.endswith('.xls') or file_in.endswith('.xlsx'):
+    #     doc = openpyxl.load_workbook(file_path)
+    #     header_images_paths = []
+    #     isExcel = True
         return True
 
     doc.save((config["BetweenFolder"]) + new_file_path)

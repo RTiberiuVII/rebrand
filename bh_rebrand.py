@@ -682,7 +682,7 @@ def place_logo_body(file_in, file_out, config):
         doc = openpyxl.load_workbook(file_path)
         header_images_paths = []
         isExcel = True
-    elif file_in.endswith('.pptx'):
+    elif file_in.endswith('.pptx') or file_in.endswith('.pdf'):
         # Move file and finish executing function
         os.rename(file_in, file_out)
         return True

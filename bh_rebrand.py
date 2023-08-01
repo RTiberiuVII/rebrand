@@ -31,6 +31,7 @@ from PIL import Image
 import numpy as np
 from pptx import Presentation
 from pdf2docx import Converter as ConverterPdf2Docx
+from docx2pdf import convert as ConvertDocx2Pdf
 
 FILE_FORMAT_PDF_WORD = 17
 FILE_FORMAT_PDF_EXCEL = 0
@@ -1624,28 +1625,23 @@ def disable_background_graphics(zip_in, zip_out, xml_path):
     zip_out.writestr(xml_path, modified_xml)
 
 
+pdfs = []
+
 def process_file_pdf(file_in, file_out, config):
     file_path = file_in
+    pdfs.append(file_path.split('\\')[-1])
     file_name = file_path.split('\\')[-1][0:-4]
-    print(f'FILE NAME: {file_name}')
     file_out_path = file_out.replace('.pdf', '.docx')
-    print(f'FILE OUTPUT: {file_out_path}')
 
     if file_path.endswith('.pdf'):
         cv_pdf_2_docx = ConverterPdf2Docx(file_path)
         cv_pdf_2_docx.convert(config['InputFolder'] + f'/{file_name}.docx', start=0, end=None)
-        # print('CONVERTED PDF')
         cv_pdf_2_docx.close()
 
-    process_file_word(file_in=config['InputFolder'] + f'/{file_name}.docx', file_out=file_out, config=config)
+    process_file_word(file_in=config['InputFolder'] + f'/{file_name}.docx',
+                      file_out=file_out_path, config=config)
 
-    wdFormatPDF = 17
-
-    word = comtypes.client.CreateObject('Word.Application')
-    doc = word.Documents.Open(file_out)
-    doc.SaveAs('test.pdf', wdFormatPDF)
-    doc.Close()
-    word.Quit()
+    os.remove(config['InputFolder'] + f'/{file_name}.docx')
 
 
 def process_file(file_in, file_out, config):
@@ -1922,7 +1918,7 @@ def main():
                 print(f'File {file_counter}/{file_count} -- Replacing body image for: {file_body}')
                 try:
                     place_logo_body(file_in, file_out, config)
-                    pass
+                    # pass
                 except Exception as e:
                     print(f'Failed replacing the body images for file: {file_body} \nError: {e}')
                     body_replace_failure_count += 1
@@ -1932,6 +1928,12 @@ def main():
                 file_counter += 1
                 # Remove file from headerImageReplaced folder
                 # os.remove(file_in)
+
+                # If the current input file originally was 'pdf', convert it back to pdf
+                if file_in.split('\\')[-1].replace('.docx', '.pdf') in pdfs:
+                    file_out_pdf = file_out.replace('.docx', '.pdf')  # Update the output path with 'pdf' extension
+                    ConvertDocx2Pdf(file_out, file_out_pdf)  # Convert docx to pdf
+                    os.remove(file_out)  # Remove the docx copy from the output folder
 
         # Close COM Server
         if pdf_conversion:

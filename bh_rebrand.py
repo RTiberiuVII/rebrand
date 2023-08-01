@@ -639,8 +639,9 @@ def place_logo_header(zip_in, zip_out, config):
         for image_location in header_images[file_name]:
             # Add image to the catalog
             add_image_to_catalog(zip_in, image_location, config)
-        
+
     return status, note, warning
+
 
 def add_image_to_catalog(zip_in, image_location, config):
     """
@@ -670,7 +671,7 @@ def add_image_to_catalog(zip_in, image_location, config):
     for logo in logo_locations:
         # Compare header image with logo
         logo_is_present = compare_images(config["BetweenFolder"] + image_location,
-                                            config["FoundLogosFolder"] + logo)
+                                         config["FoundLogosFolder"] + logo)
         if logo_is_present:
             break
 
@@ -678,7 +679,7 @@ def add_image_to_catalog(zip_in, image_location, config):
     if not logo_is_present:
         different_logos_found += 1
         renamed_path = f'{config["BetweenFolder"]}{os.path.dirname(image_location)}/logo_' \
-                        f'{different_logos_found}{file_extension}'
+                       f'{different_logos_found}{file_extension}'
         os.rename(config["BetweenFolder"] + image_location, renamed_path)
         shutil.move(renamed_path, config["FoundLogosFolder"])
 
@@ -701,11 +702,11 @@ def place_logo_body(file_in, file_out, config):
     elif file_in.endswith(skip_file_formats):
         # Move file and finish executing function
         os.rename(file_in, file_out)
-    # Process excel files
-    # elif file_in.endswith('.xls') or file_in.endswith('.xlsx'):
-    #     doc = openpyxl.load_workbook(file_path)
-    #     header_images_paths = []
-    #     isExcel = True
+        # Process excel files
+        # elif file_in.endswith('.xls') or file_in.endswith('.xlsx'):
+        #     doc = openpyxl.load_workbook(file_path)
+        #     header_images_paths = []
+        #     isExcel = True
         return True
 
     doc.save((config["BetweenFolder"]) + new_file_path)
@@ -780,8 +781,6 @@ def place_logo_body(file_in, file_out, config):
 
     # Remove file from original location
     os.remove(file_in)
-
-
 
 
 def get_filetype(file, config):
@@ -1018,6 +1017,7 @@ def copy_and_replace_content_excel(file_in, file_out, config):
             if len(image_locations) > 0:
                 # Compare all images with the logo catalog
                 for image_location in image_locations:
+                    add_image_to_catalog(zip_in=zip_in, image_location=image_location, config=config)
                     # print(image_location)
                     for logo_location in logo_locations:
                         # Do similarity check
@@ -1645,6 +1645,7 @@ def disable_background_graphics(zip_in, zip_out, xml_path):
 
 pdfs = []
 
+
 def process_file_pdf(file_in, file_out, config):
     file_path = file_in
     pdfs.append(file_path.split('\\')[-1])
@@ -1839,8 +1840,8 @@ def main():
             process_file_failure_count = 0
 
             # Sort files to process Word files (.docx, .doc, .docm) first before other file types
-            sorted_files = sorted(os.listdir(config["InputFolder"]), key=lambda x: (not x.lower().endswith((".docx", ".doc", ".docm")), x))
-
+            sorted_files = sorted(os.listdir(config["InputFolder"]),
+                                  key=lambda x: (not x.lower().endswith((".docx", ".doc", ".docm")), x))
 
             # Loop over every file in the directory
             for file in sorted_files:
@@ -1912,7 +1913,8 @@ def main():
             body_replace_failure_count = 0
 
             # Sort files to process Word files (.docx, .doc, .docm) first before other file types
-            sorted_files = sorted(os.listdir(config["HeaderImageReplacedFoler"]), key=lambda x: (not x.lower().endswith((".docx", ".doc", ".docm")), x))
+            sorted_files = sorted(os.listdir(config["HeaderImageReplacedFoler"]),
+                                  key=lambda x: (not x.lower().endswith((".docx", ".doc", ".docm")), x))
 
             # Loop over every file in the directory
             for file_body in sorted_files:
@@ -1938,7 +1940,7 @@ def main():
                     print(f'Failed replacing the body images for file: {file_body} \nError: {e}')
                     body_replace_failure_count += 1
                     log.write(f"{file_in};-;Failed replacing the body images!;Error:{e}\n")
-                
+
                 file_counter += 1
                 # Remove file from headerImageReplaced folder
                 # os.remove(file_in)
@@ -2083,6 +2085,7 @@ def delete_all_contents(config):
 
     for folder in folders:
         delete_folder_contents(folder)
+
 
 if __name__ == "__main__":
     main()

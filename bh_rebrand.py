@@ -41,6 +41,12 @@ FILE_FORMAT_DOCX = 16
 different_logos_found = 0
 image_comparisons = 0
 header_images = {}
+file_run_times = {
+        'excel': 0,
+        'word': 0,
+        'powerpoint': 0,
+        'pdf': 0
+    }
 
 
 def count_docx(file_name):
@@ -694,7 +700,7 @@ def place_logo_body(file_in, file_out, config):
 
     new_file_path = os.path.basename(file_path)
     skip_file_formats = ('.pptx', '.pdf', '.xlsx', '.xls')
-
+    
     if file_in.endswith('.docx'):
         doc = Document(file_path)
         header_images_paths = header_images[new_file_path]
@@ -710,6 +716,7 @@ def place_logo_body(file_in, file_out, config):
 
     doc.save((config["BetweenFolder"]) + new_file_path)
 
+    process_time = time()
     # Open input document and new document
     with ZipFile(open((config["BetweenFolder"]) + new_file_path, "rb")) as zip_in:
         with ZipFile(file_out, "w", ZIP_DEFLATED) as zip_out:
@@ -781,8 +788,8 @@ def place_logo_body(file_in, file_out, config):
     # Remove file from original location
     os.remove(file_in)
 
-
-
+    global file_run_times
+    file_run_times['word'] = file_run_times['word'] + (time() - process_time)
 
 def get_filetype(file, config):
     """
@@ -1678,17 +1685,26 @@ def process_file(file_in, file_out, config):
         content of the configuration file as dictionary with the tag as
         key and the information as value
     """
+    duration = time()
+    global file_run_times 
+    file_type = None
     file_extension = pathlib.Path(file_in).suffix
     match file_extension:
         case '.doc' | '.docx' | '.docm':
             process_file_word(file_in, file_out, config)
+            file_type = 'word'
         case '.xlsx' | '.xls':
             process_file_excel(file_in, file_out, config)
+            file_type = 'excel'
         case '.pptx':
             process_file_powerpoint(file_in, file_out, config)
+            file_type = 'powerpoint'
         case '.pdf':
             process_file_pdf(file_in, file_out, config)
+            file_type = 'pdf'
 
+    if file_type is not None:
+        file_run_times[file_type] = file_run_times[file_type] + (time() - duration)
 
 def add_missing_images(zip_in, zip_out):
     """
@@ -1791,6 +1807,7 @@ def main():
     Starts processing of files and conversion to PDF
     """
     script_run_time = time()
+
     if len(sys.argv) == 2:
         # Put elements of config file into a dictionary
         config = map_config(sys.argv[1])
@@ -1956,11 +1973,24 @@ def main():
         log.close()
 
         print(
-            f"All done! \nThe script ran for {strftime('%H:%M:%S', gmtime(time() - script_run_time))} seconds\nReplacing the files' body images took: {strftime('%H:%M:%S', gmtime(time() - body_image_replace))} seconds\nTotal image comparisons: {image_comparisons:,}\nProcessed file failed: {process_file_failure_count}\nBody image replacement fails count:{body_replace_failure_count}")
+            f"All done! \nThe script ran for {strftime('%H:%M:%S', gmtime(time() - script_run_time))} seconds\nReplacing the files' body images took: {strftime('%H:%M:%S', gmtime(time() - body_image_replace))} seconds\nTotal image comparisons: {image_comparisons:,}\nProcessed file failed: {process_file_failure_count}\nBody image replacement fails count:{body_replace_failure_count}\n\nTime breakdown:\nWord: {format_time(file_run_times['word'])}\nExcel: {format_time(file_run_times['excel'])}\nPowerPoint: {format_time(file_run_times['powerpoint'])}\nPDF: {format_time(file_run_times['pdf'])}")
 
     else:
         print("Specify an existing config file")
 
+def format_time(seconds):
+    # Extract the integer and decimal parts of the seconds
+    int_seconds = int(seconds)
+    decimal_seconds = round((seconds - int_seconds) * 100)  # Round to two decimal places
+
+    # Calculate hours, minutes, and seconds
+    hours, remainder = divmod(int_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+
+    # Format the time as a string
+    formatted_time = f"{hours:02d}:{minutes:02d}:{seconds:02d}.{decimal_seconds:02d} seconds"
+
+    return formatted_time
 
 def compare_images(image_path1, image_path2):
     """

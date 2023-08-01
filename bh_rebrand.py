@@ -1682,7 +1682,7 @@ def process_file(file_in, file_out, config):
     match file_extension:
         case '.doc' | '.docx' | '.docm':
             process_file_word(file_in, file_out, config)
-        case '.xlsx' | '.xls':
+        case '.xlsx' | '.xls' | 'xlsm':
             process_file_excel(file_in, file_out, config)
         case '.pptx':
             process_file_powerpoint(file_in, file_out, config)

@@ -637,36 +637,54 @@ def place_logo_header(zip_in, zip_out, config):
     if config['CompareLogoByPixels'] and num_files > 0:
 
         for image_location in header_images[file_name]:
-            # Extract header image
-            zip_in.extract(image_location, path=config["BetweenFolder"])
-            file_extension = os.path.splitext(config["BetweenFolder"] + image_location)[1]
-            logo_is_present = False
-
-            # Get all logo paths from the catalog
-            logo_locations = os.listdir(config["FoundLogosFolder"])
-
-            # Cycle through the entire catalog and check if header image is already present
-            for logo in logo_locations:
-                # Compare header image with logo
-                logo_is_present = compare_images(config["BetweenFolder"] + image_location,
-                                                 config["FoundLogosFolder"] + logo)
-
-                if logo_is_present:
-                    break
-
-            # Add image to the logo catalog folder
-            if not logo_is_present:
-                different_logos_found += 1
-                renamed_path = f'{config["BetweenFolder"]}{os.path.dirname(image_location)}/logo_' \
-                               f'{different_logos_found}{file_extension}'
-                os.rename(config["BetweenFolder"] + image_location, renamed_path)
-                shutil.move(renamed_path, config["FoundLogosFolder"])
-
-            # Remove zip images empty base directory
-            zip_image_base_directory = image_location.split('/')[0]
-            shutil.rmtree(config["BetweenFolder"] + zip_image_base_directory)
-
+            # Add image to the catalog
+            add_image_to_catalog(zip_in, image_location, config)
+        
     return status, note, warning
+
+def add_image_to_catalog(zip_in, image_location, config):
+    """
+    Extracts the image from a zipfile path, and adds it to the catalog of logos if it's unique.
+
+    Parameters
+    ----------
+    zip_in: ZipFile obj
+        input ZipFile
+
+    image_location: string
+        path to the image inside the zipfile
+
+    config: dictionary
+        dict containing information from the config file
+    """
+    global different_logos_found
+    # Extract image
+    zip_in.extract(image_location, path=config["BetweenFolder"])
+    file_extension = os.path.splitext(config["BetweenFolder"] + image_location)[1]
+    logo_is_present = False
+
+    # Get all logo paths from the catalog
+    logo_locations = os.listdir(config["FoundLogosFolder"])
+
+    # Cycle through the entire catalog and check if header image is already present
+    for logo in logo_locations:
+        # Compare header image with logo
+        logo_is_present = compare_images(config["BetweenFolder"] + image_location,
+                                            config["FoundLogosFolder"] + logo)
+        if logo_is_present:
+            break
+
+    # Add image to the logo catalog folder
+    if not logo_is_present:
+        different_logos_found += 1
+        renamed_path = f'{config["BetweenFolder"]}{os.path.dirname(image_location)}/logo_' \
+                        f'{different_logos_found}{file_extension}'
+        os.rename(config["BetweenFolder"] + image_location, renamed_path)
+        shutil.move(renamed_path, config["FoundLogosFolder"])
+
+    # Remove zip images empty base directory
+    zip_image_base_directory = image_location.split('/')[0]
+    shutil.rmtree(config["BetweenFolder"] + zip_image_base_directory)
 
 
 def place_logo_body(file_in, file_out, config):
@@ -1981,8 +1999,8 @@ def compare_images(image_path1, image_path2):
         # Calculate deviation
         deviation = np.mean(np.abs(image1_array - image2_array))
 
-        # Pictures are similar if their deviation is lower than 17 
-        similarity = deviation < 20
+        # Pictures are similar if their deviation is lower than the set threshold
+        similarity = deviation < 10
 
         # Increment counter
         image_comparisons += 1

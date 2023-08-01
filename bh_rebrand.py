@@ -1882,7 +1882,6 @@ def main():
                 except Exception as e:
                     print(f'File failed to process! File name: {file}\nError: {e}')
                     process_file_failure_count += 1
-                    log = open(log_path, "w+", encoding="utf-8")
                     log.write(f"{file_in};-;File failed to process!;Error:{e}\n")
                 # End timer and output time
                 file_counter += 1
@@ -1903,7 +1902,6 @@ def main():
 
                     # End timer and output time
                     print(f"Converting took {time() - start_converting_time:.3f} seconds")
-            log.close()
         else:
             print("Specify an existing input folder containing the documents and an output folder")
 
@@ -1936,11 +1934,9 @@ def main():
                 print(f'File {file_counter}/{file_count} -- Replacing body image for: {file_body}')
                 try:
                     place_logo_body(file_in, file_out, config)
-                    # pass
                 except Exception as e:
                     print(f'Failed replacing the body images for file: {file_body} \nError: {e}')
                     body_replace_failure_count += 1
-                    log = open(log_path, "w+", encoding="utf-8")
                     log.write(f"{file_in};-;Failed replacing the body images!;Error:{e}\n")
                 
                 file_counter += 1
@@ -1956,6 +1952,8 @@ def main():
         # Close COM Server
         if pdf_conversion:
             quit_com_servers(word, excel, power_point)
+
+        log.close()
 
         print(
             f"All done! \nThe script ran for {strftime('%H:%M:%S', gmtime(time() - script_run_time))} seconds\nReplacing the files' body images took: {strftime('%H:%M:%S', gmtime(time() - body_image_replace))} seconds\nTotal image comparisons: {image_comparisons:,}\nProcessed file failed: {process_file_failure_count}\nBody image replacement fails count:{body_replace_failure_count}")
@@ -2078,7 +2076,7 @@ def delete_all_contents(config):
     folders = [
         config['BetweenFolder'],
         config['HeaderImageReplacedFoler'],
-        # config['FoundLogosFolder'],
+        config['FoundLogosFolder'],
         config['ImagesFolder'],
         config['OutputFolder']
     ]

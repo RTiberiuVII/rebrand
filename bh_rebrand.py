@@ -423,7 +423,7 @@ def resize_image(input_image_path, output_image_folder, reference_image_path):
             with Image.open(input_image_path) as input_image:
                 # Calculate the new dimensions for the input image while maintaining aspect ratio
                 input_aspect_ratio = input_image.width / input_image.height
-
+                
                 if input_aspect_ratio > ref_aspect_ratio:
                     # The input image is wider, adjust the width to match the reference aspect ratio
                     new_width = ref_width
@@ -435,10 +435,10 @@ def resize_image(input_image_path, output_image_folder, reference_image_path):
 
                 # Resize the input image with aspect ratio preserved
                 resized_image = input_image.resize((new_width, new_height))
-
                 # Create a blank image with the reference aspect ratio and paste the resized image onto it
                 result_image = Image.new("RGB", (ref_width, ref_height), (46, 46, 46))
                 offset = ((ref_width - new_width) // 2, (ref_height - new_height) // 2)
+
                 result_image.paste(resized_image, offset)
 
                 # Save the resized image
@@ -1136,10 +1136,10 @@ def process_file_excel(file_in, file_out, config):
     file_input_path = file_in  # Input file path
 
     # If file in wrong format then convert .xls or .xlsm file to .xlsx and update file path
-    if file_input_path.endswith('.xls') or file_input_path.endswith('.xlsm'):
-        file_input_path = convert_file(file_in, FILE_FORMAT_XLSX)
-        # Update the output basename accordingly, so it will be saved as 'xlsx'
-        file_out = file_out.replace(file_out.rsplit(".")[-1], 'xlsx')
+    # if file_input_path.endswith('.xls') or file_input_path.endswith('.xlsm'):
+    #     file_input_path = convert_file(file_in, FILE_FORMAT_XLSX)
+    #     # Update the output basename accordingly, so it will be saved as 'xlsx'
+    #     file_out = file_out.replace(file_out.rsplit(".")[-1], 'xlsx')
 
     copy_and_replace_content_excel(file_in=file_input_path, file_out=file_out, config=config)
 

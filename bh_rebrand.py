@@ -18,7 +18,7 @@ from datetime import datetime
 from re import search, findall
 from zipfile import ZipFile, ZIP_DEFLATED
 
-import lxml.etree
+import lxml.etree as le
 import pptx
 from docx import Document
 import comtypes.client
@@ -374,14 +374,27 @@ def copy_and_replace(zip_in, zip_out, config):
     config: dictionary
         dict contain information from the config file
     """
+    # XML files that contain image crop data
+    xml_name_crop = ['header1.xml', 'header2.xml', 'header3.xml']
     # Go over every file in the input document
     textnote = ""
     for path in zip_in.namelist():
+        already_added = False
         # Check if the path is not in the media folder
         if "media" not in path:
             file_content = zip_in.read(path)
+            # print('Path: ', path, ' Test: ', any(element in path for element in xml_name_crop))
+            # Remove crop from images
+            if any(element in path for element in xml_name_crop):
+                already_added = _modify_xml_image_crop_fit(zip_in, zip_out, path)
+                # try:
+                # except Exception as e:
+                #     print('Failed to remove crop from image')
+            
             # Copy file into new document
-            zip_out.writestr(path, file_content)
+            if not already_added:
+                zip_out.writestr(path, file_content)
+
     return textnote
 
 
@@ -1893,16 +1906,16 @@ def main():
 
                 # Process the file if it's not empty
                 print(f"File {file_counter}/{file_count} -- Processing {file}")
-                try:
-                    if os.path.getsize(file_in) != 0:
-                        process_file(file_in, file_out, config)
-                    else:
-                        print(f"File skipped because it's empty: {file}")
-                        log.write(f"{file_in};-;File skipped because it's empty!\n")
-                except Exception as e:
-                    print(f'File failed to process! File name: {file}\nError: {e}')
-                    process_file_failure_count += 1
-                    log.write(f"{file_in};-;File failed to process!;Error:{e}\n")
+                process_file(file_in, file_out, config)
+                # try:
+                #     if os.path.getsize(file_in) != 0:
+                #     else:
+                #         print(f"File skipped because it's empty: {file}")
+                #         log.write(f"{file_in};-;File skipped because it's empty!\n")
+                # except Exception as e:
+                #     print(f'File failed to process! File name: {file}\nError: {e}')
+                #     process_file_failure_count += 1
+                #     log.write(f"{file_in};-;File failed to process!;Error:{e}\n")
                 # End timer and output time
                 file_counter += 1
                 print(f"Processing took {time() - start_time:.3f} seconds")
@@ -1946,7 +1959,7 @@ def main():
 
                 if file_in.split('\\')[-1].replace('.docx', '.pdf') in pdfs: # TODO
                     print('TODO')
-                    
+
                 # Get the current filetype
                 config = get_filetype(file_body, config)
 
@@ -2000,6 +2013,39 @@ def format_time(seconds):
     formatted_time = f"{hours:02d}:{minutes:02d}:{seconds:02d}.{decimal_seconds:02d} seconds"
 
     return formatted_time
+
+
+def _modify_xml_image_crop_fit(zip_in, zip_out, xml_file_path):
+    '''
+    Remove the rectangle element, from an XML file, that is responsible for cropping an image.
+    '''
+    # Read the XML file from the ZipFile object
+    with zip_in.open(xml_file_path) as xml_file:
+        xml_data = xml_file.read()
+
+    # Parse the XML data using LXML
+    parser = le.XMLParser(remove_blank_text=True)
+    root = le.fromstring(xml_data, parser=parser)
+
+    # Namespace mapping for OpenXML drawing elements
+    ns = {
+        'a': 'http://schemas.openxmlformats.org/drawingml/2006/main',
+        'pic': 'http://schemas.openxmlformats.org/drawingml/2006/picture',
+    }
+
+    # Find the <a:srcRect> element and remove it
+    for src_rect_element in root.findall('.//a:srcRect', namespaces=ns):
+        if src_rect_element is not None:
+            parent = src_rect_element.getparent()
+            parent.remove(src_rect_element)
+
+    # Write the modified XML data to a temporary in-memory buffer
+    modified_xml_data = le.tostring(root, encoding='utf-8', xml_declaration=True)
+
+    # Replace the original file inside the zip_in with the updated content
+    zip_out.writestr(xml_file_path, modified_xml_data)
+
+    return True
 
 def compare_images(image_path1, image_path2):
     """

@@ -78,38 +78,39 @@ def replace_text(runs, target, replace):
     begin = 0
     full_text = ""
     for end, run in enumerate(runs):
-        full_text += run.text
+        if run.text is not None:
+            full_text += run.text
 
-        if target in full_text:
+            if target in full_text:
 
-            # Find the beginning index
-            index = full_text.index(target)
-            while index >= len(runs[begin].text):
-                index -= len(runs[begin].text)
-                begin += 1
+                # Find the beginning index
+                index = full_text.index(target)
+                while index >= len(runs[begin].text):
+                    index -= len(runs[begin].text)
+                    begin += 1
 
-            # Find the corresponding runs
-            shuttle = runs[begin:end + 1]
+                # Find the corresponding runs
+                shuttle = runs[begin:end + 1]
 
-            # Perform the replace operation
-            if target in shuttle[0].text:
-                shuttle[0].text = shuttle[0].text.replace(target, replace)
-            else:
-                replace_begin_index = full_text.index(target)
-                replace_end_index = replace_begin_index + len(target)
-                replace_end_index_in_last_run = replace_end_index - len(''.join(run.text for run in shuttle[:-1]))
-                shuttle[0].text = shuttle[0].text[:replace_begin_index] + replace
+                # Perform the replace operation
+                if target in shuttle[0].text:
+                    shuttle[0].text = shuttle[0].text.replace(target, replace)
+                else:
+                    replace_begin_index = full_text.index(target)
+                    replace_end_index = replace_begin_index + len(target)
+                    replace_end_index_in_last_run = replace_end_index - len(''.join(run.text for run in shuttle[:-1]))
+                    shuttle[0].text = shuttle[0].text[:replace_begin_index] + replace
 
-                # Clear middle runs
-                for i in shuttle[1:-1]:
-                    i.text = ''
+                    # Clear middle runs
+                    for i in shuttle[1:-1]:
+                        i.text = ''
 
-                # Keep last run
-                shuttle[-1].text = shuttle[-1].text[replace_end_index_in_last_run:]
+                    # Keep last run
+                    shuttle[-1].text = shuttle[-1].text[replace_end_index_in_last_run:]
 
-            # Reset the beginning index for the next iteration
-            begin = end + 1
-            full_text = ""
+                # Reset the beginning index for the next iteration
+                begin = end + 1
+                full_text = ""
     return
 
 
@@ -1937,10 +1938,15 @@ def main():
             # Loop over every file in the directory
             for file_body in sorted_files:
                 print('Processing file body: ', file_body)
+
+
                 # Create input and output path and start file processing
                 file_in = os.path.join(config["HeaderImageReplacedFoler"], file_body)
                 file_out = os.path.join(config["OutputFolder"], file_body)
 
+                if file_in.split('\\')[-1].replace('.docx', '.pdf') in pdfs: # TODO
+                    print('TODO')
+                    
                 # Get the current filetype
                 config = get_filetype(file_body, config)
 

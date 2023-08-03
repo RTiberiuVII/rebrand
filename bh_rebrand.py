@@ -1401,39 +1401,39 @@ def _create_copyright_element():
     """
 
     # String representation of the XML element
-    xml_string = """<ns0:sp>
-                        <ns0:nvSpPr>
-                            <ns0:cNvPr id="999" name="Copyright Text"/>
-                            <ns0:cNvSpPr txBox="1"/>
-                            <ns0:nvPr userDrawn="1"/>
-                        </ns0:nvSpPr>
-                        <ns0:spPr>
-                            <ns1:xfrm>
-                                <ns1:off x="404874" y="6608933"/>
-                                <ns1:ext cx="2884874" cy="369332"/>
-                            </ns1:xfrm>
-                            <ns1:prstGeom prst="rect">
-                                <ns1:avLst/>
-                            </ns1:prstGeom>
-                            <ns1:noFill/>
-                        </ns0:spPr>
-                        <ns0:txBody>
-                            <ns1:bodyPr wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" rtlCol="0">
-                                <ns1:spAutoFit/>
-                            </ns1:bodyPr>
-                            <ns1:lstStyle/>
-                            <ns1:p>
-                                <ns1:r>
-                                    <ns1:rPr lang="en-US" sz="800" spc="-10" baseline="0" dirty="0">
-                                        <ns1:solidFill>
-                                            <ns1:schemeClr val="accent4"/>
-                                        </ns1:solidFill>
-                                    </ns1:rPr>
-                                    <ns1:t>Copyright 2021 Baker Hughes Company. All rights reserved.</ns1:t>
-                                </ns1:r>
-                            </ns1:p>
-                        </ns0:txBody>
-                    </ns0:sp>"""
+    xml_string = """<p:sp>
+                        <p:nvSpPr>
+                            <p:cNvPr id="999" name="Copyright Text"/>
+                            <p:cNvSpPr txBox="1"/>
+                            <p:nvPr userDrawn="1"/>
+                        </p:nvSpPr>
+                        <p:spPr>
+                            <a:xfrm>
+                                <a:off x="404874" y="6608933"/>
+                                <a:ext cx="2884874" cy="369332"/>
+                            </a:xfrm>
+                            <a:prstGeom prst="rect">
+                                <a:avLst/>
+                            </a:prstGeom>
+                            <a:noFill/>
+                        </p:spPr>
+                        <p:txBody>
+                            <a:bodyPr wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" rtlCol="0">
+                                <a:spAutoFit/>
+                            </a:bodyPr>
+                            <a:lstStyle/>
+                            <a:p>
+                                <a:r>
+                                    <a:rPr lang="en-US" sz="800" spc="-10" baseline="0" dirty="0">
+                                        <a:solidFill>
+                                            <a:schemeClr val="accent4"/>
+                                        </a:solidFill>
+                                    </a:rPr>
+                                    <a:t>Copyright 2021 Baker Hughes Company. All rights reserved.</a:t>
+                                </a:r>
+                            </a:p>
+                        </p:txBody>
+                    </p:sp>"""
 
     parser = lxml.etree.XMLParser(encoding='UTF-8', recover=True, remove_blank_text=True)  # XML parser object
     # Parse the string definition and create the XML element
@@ -1654,11 +1654,8 @@ def disable_background_graphics(zip_in, zip_out, xml_path):
     # sp_tree.insert(-1, xml_element)  # Append the xml element to the spTree
     sp_tree.append(xml_element)  # Append the xml element to the spTree
 
-    modified_xml = ET.tostring(root, encoding='utf-8', xml_declaration=True)
-    zip_out.writestr(xml_path, modified_xml)
-
     # Write the updated xml file to the output file
-    modified_xml = ET.tostring(root, encoding='utf-8', xml_declaration=True)
+    modified_xml = lxml.etree.tostring(root, encoding='utf-8', xml_declaration=True)
     zip_out.writestr(xml_path, modified_xml)
 
 

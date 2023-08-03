@@ -2214,7 +2214,7 @@ def delete_all_contents(config):
         delete_folder_contents(folder)
 
 def timeout_counter(stop_timer, config):
-    if not stop_timer.wait(int(config['TimeOut']) * 10):
+    if not stop_timer.wait(int(config['TimeOut']) * 60):
         print('Timer terminating execution thread')
 
 if __name__ == "__main__":

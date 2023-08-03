@@ -42,11 +42,11 @@ different_logos_found = 0
 image_comparisons = 0
 header_images = {}
 file_run_times = {
-        'excel': 0,
-        'word': 0,
-        'powerpoint': 0,
-        'pdf': 0
-    }
+    'excel': 0,
+    'word': 0,
+    'powerpoint': 0,
+    'pdf': 0
+}
 
 
 def count_docx(file_name):
@@ -390,7 +390,7 @@ def copy_and_replace(zip_in, zip_out, config):
                 # try:
                 # except Exception as e:
                 #     print('Failed to remove crop from image')
-            
+
             # Copy file into new document
             if not already_added:
                 zip_out.writestr(path, file_content)
@@ -437,7 +437,7 @@ def resize_image(input_image_path, output_image_folder, reference_image_path):
             with Image.open(input_image_path) as input_image:
                 # Calculate the new dimensions for the input image while maintaining aspect ratio
                 input_aspect_ratio = input_image.width / input_image.height
-                
+
                 if input_aspect_ratio > ref_aspect_ratio:
                     # The input image is wider, adjust the width to match the reference aspect ratio
                     new_width = ref_width
@@ -715,7 +715,7 @@ def place_logo_body(file_in, file_out, config):
 
     new_file_path = os.path.basename(file_path)
     skip_file_formats = ('.pptx', '.pdf', '.xlsx', '.xls')
-    
+
     if file_in.endswith('.docx'):
         doc = Document(file_path)
         header_images_paths = header_images[new_file_path]
@@ -801,6 +801,7 @@ def place_logo_body(file_in, file_out, config):
 
     # Remove file from original location
     os.remove(file_in)
+
 
 def get_filetype(file, config):
     """
@@ -1484,12 +1485,26 @@ def insert_replacement_image_to_slide(prs, config):
                                          left=pptx.util.Inches(logo_positions['top-left-first']['left']),
                                          top=pptx.util.Inches(logo_positions['top-left-first']['top'])
                                          )
+                if check_for_logo_collision_updated(slide):
+                    _delete_replacement_image(slide)
+                    slide.shapes.add_picture(image_file=config['ReplacementImageWhiteSmall'],
+                                             left=pptx.util.Inches(logo_positions['bottom-right']['left']),
+                                             top=pptx.util.Inches(logo_positions['bottom-right']['top'])
+                                             )
             else:  # If old color scheme is not detected
                 # Add the Large, Dark BH logo to the top left of the slide
                 slide.shapes.add_picture(image_file=config['ReplacementImageDarkLarge'],
                                          left=pptx.util.Inches(logo_positions['top-left-first']['left']),
                                          top=pptx.util.Inches(logo_positions['top-left-first']['top'])
                                          )
+                if check_for_logo_collision_updated(slide):
+                    _delete_replacement_image(slide)
+                    slide.shapes.add_picture(image_file=config['ReplacementImageDarkSmall'],
+                                             left=pptx.util.Inches(logo_positions['bottom-right']['left']),
+                                             top=pptx.util.Inches(logo_positions['bottom-right']['top'])
+                                             )
+
+            # print(check_for_logo_collision_updated(slide))
         else:  # For every other slide that is not a title slide
             # Check if old color scheme exists on the current slide's slide layout
             if _check_background_color(slide_layout=slide.slide_layout) is not None:
@@ -1527,7 +1542,8 @@ def _delete_replacement_image(slide):
                                             {'ns0': 'http://schemas.openxmlformats.org/presentationml/2006/main'})
             if element_pr.attrib is not None:
                 if 'descr' in element_pr.attrib:
-                    if element_pr.attrib['descr'] == 'replacementImage2.png':
+                    # if element_pr.attrib['descr'] == 'replacementImage2.png':
+                    if element_pr.attrib['id'] == '1000' and element_pr.attrib['name'] == 'Picture 999':
                         # If the current element in the replacement image, delete it
                         pic = shape.element
                         pic_p = pic.getparent()
@@ -1560,7 +1576,8 @@ def check_for_logo_collision_updated(slide):
             image_element = shape.element.find('.//ns0:cNvPr', prefix_map)
             if image_element.attrib is not None:
                 if 'descr' in image_element.attrib:
-                    if image_element.attrib['descr'] in ['replacementImage2.png', 'replacementImage.png']:
+                   #  if image_element.attrib['descr'] in ['replacementImage2.png', 'replacementImage.png']:
+                   if image_element.attrib['id'] == '1000' and image_element.attrib['name'] == 'Picture 999':
                         img_element_pr = shape.element
                         # break
         shape_element = shape.element.find('.//ns0:spPr', prefix_map)  # Find the Shape properties element
@@ -1696,7 +1713,7 @@ def process_file(file_in, file_out, config):
         key and the information as value
     """
     duration = time()
-    global file_run_times 
+    global file_run_times
     file_type = None
     file_extension = pathlib.Path(file_in).suffix
     match file_extension:
@@ -1714,6 +1731,7 @@ def process_file(file_in, file_out, config):
 
     if file_type is not None:
         file_run_times[file_type] = file_run_times[file_type] + (time() - duration)
+
 
 def add_missing_images(zip_in, zip_out):
     """
@@ -1978,13 +1996,12 @@ def main():
                     file_out_pdf = file_out.replace('.docx', '.pdf')  # Update the output path with 'pdf' extension
                     ConvertDocx2Pdf(file_out, file_out_pdf)  # Convert docx to pdf
                     os.remove(file_out)  # Remove the docx copy from the output folder
-                    
+
                     # Increment PDF processing timer
                     file_run_times['pdf'] = file_run_times['pdf'] + (time() - process_time)
                 else:
                     # Increment word processing timer
                     file_run_times['word'] = file_run_times['word'] + (time() - process_time)
-
 
         # Close COM Server
         if pdf_conversion:
@@ -1997,6 +2014,7 @@ def main():
 
     else:
         print("Specify an existing config file")
+
 
 def format_time(seconds):
     # Extract the integer and decimal parts of the seconds
@@ -2044,6 +2062,7 @@ def _modify_xml_image_crop_fit(zip_in, zip_out, xml_file_path):
     zip_out.writestr(xml_file_path, modified_xml_data)
 
     return True
+
 
 def compare_images(image_path1, image_path2):
     """

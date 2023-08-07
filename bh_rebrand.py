@@ -1147,10 +1147,10 @@ def process_file_excel(file_in, file_out, config):
     file_input_path = file_in  # Input file path
 
     # If file in wrong format then convert .xls or .xlsm file to .xlsx and update file path
-    # if file_input_path.endswith('.xls') or file_input_path.endswith('.xlsm'):
-    #     file_input_path = convert_file(file_in, FILE_FORMAT_XLSX)
-    #     # Update the output basename accordingly, so it will be saved as 'xlsx'
-    #     file_out = file_out.replace(file_out.rsplit(".")[-1], 'xlsx')
+    if file_input_path.endswith('.xls'):  # or file_input_path.endswith('.xlsm'):
+        file_input_path = convert_file(file_in, FILE_FORMAT_XLSX)
+        # Update the output basename accordingly, so it will be saved as 'xlsx'
+        file_out = file_out.replace(file_out.rsplit(".")[-1], 'xlsx')
 
     copy_and_replace_content_excel(file_in=file_input_path, file_out=file_out, config=config)
 
@@ -1576,8 +1576,8 @@ def check_for_logo_collision_updated(slide):
             image_element = shape.element.find('.//ns0:cNvPr', prefix_map)
             if image_element.attrib is not None:
                 if 'descr' in image_element.attrib:
-                   #  if image_element.attrib['descr'] in ['replacementImage2.png', 'replacementImage.png']:
-                   if image_element.attrib['id'] == '1000' and image_element.attrib['name'] == 'Picture 999':
+                    #  if image_element.attrib['descr'] in ['replacementImage2.png', 'replacementImage.png']:
+                    if image_element.attrib['id'] == '1000' and image_element.attrib['name'] == 'Picture 999':
                         img_element_pr = shape.element
                         # break
         shape_element = shape.element.find('.//ns0:spPr', prefix_map)  # Find the Shape properties element

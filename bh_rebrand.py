@@ -1037,7 +1037,7 @@ def copy_and_replace_content_excel(file_in, file_out, config):
             if len(image_locations) > 0:
                 # Compare all images with the logo catalog
                 for image_location in image_locations:
-                    add_image_to_catalog(zip_in=zip_in, image_location=image_location, config=config)
+                    # add_image_to_catalog(zip_in=zip_in, image_location=image_location, config=config) # Disabling adding image to catalog 
                     # print(image_location)
                     for logo_location in logo_locations:
                         # Do similarity check

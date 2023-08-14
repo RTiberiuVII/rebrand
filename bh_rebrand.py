@@ -655,7 +655,6 @@ def place_logo_header(zip_in, zip_out, config):
 
     # Add header image(s) to the catalog (if they're unique)
     if config['CompareLogoByPixels'] and num_files > 0:
-
         for image_location in header_images[file_name]:
             # Add image to the catalog
             add_image_to_catalog(zip_in, image_location, config)
@@ -683,29 +682,45 @@ def add_image_to_catalog(zip_in, image_location, config):
     zip_in.extract(image_location, path=config["BetweenFolder"])
     file_extension = os.path.splitext(config["BetweenFolder"] + image_location)[1]
     logo_is_present = False
+    image_is_transparent = False
 
-    # Get all logo paths from the catalog
-    logo_locations = os.listdir(config["FoundLogosFolder"])
+    # Check if image is transparent and omit it if it is
+    try:
+        image = Image.open(config["BetweenFolder"] + image_location)
+        if image.mode == 'RGBA':
+            image_is_transparent = all(pixel[3] == 0 for pixel in image.getdata())
+    except Exception as e:
+        print(f'Error occured when checking image transparency. Error: {e}')
+    
+    # Close the image
+    try:
+        image.close()
+    except Exception as e:
+        print(f'Error when closing the image. Error: {e}')
+        
+    if not image_is_transparent:
+        # Get all logo paths from the catalog
+        logo_locations = os.listdir(config["FoundLogosFolder"])
 
-    # Cycle through the entire catalog and check if header image is already present
-    for logo in logo_locations:
-        # Compare header image with logo
-        logo_is_present = compare_images(config["BetweenFolder"] + image_location,
-                                         config["FoundLogosFolder"] + logo)
-        if logo_is_present:
-            break
+        # Cycle through the entire catalog and check if header image is already present
+        for logo in logo_locations:
+            # Compare header image with logo
+            logo_is_present = compare_images(config["BetweenFolder"] + image_location,
+                                            config["FoundLogosFolder"] + logo)
+            if logo_is_present:
+                break
 
-    # Add image to the logo catalog folder
-    if not logo_is_present:
-        different_logos_found += 1
-        renamed_path = f'{config["BetweenFolder"]}{os.path.dirname(image_location)}/logo_' \
-                       f'{different_logos_found}{file_extension}'
-        os.rename(config["BetweenFolder"] + image_location, renamed_path)
-        shutil.move(renamed_path, config["FoundLogosFolder"])
+        # Add image to the logo catalog folder
+        if not logo_is_present:
+            different_logos_found += 1
+            renamed_path = f'{config["BetweenFolder"]}{os.path.dirname(image_location)}/logo_' \
+                        f'{different_logos_found}{file_extension}'
+            os.rename(config["BetweenFolder"] + image_location, renamed_path)
+            shutil.move(renamed_path, config["FoundLogosFolder"])
 
-    # Remove zip images empty base directory
-    zip_image_base_directory = image_location.split('/')[0]
-    shutil.rmtree(config["BetweenFolder"] + zip_image_base_directory)
+        # Remove zip images empty base directory
+        zip_image_base_directory = image_location.split('/')[0]
+        shutil.rmtree(config["BetweenFolder"] + zip_image_base_directory)
 
 
 def place_logo_body(file_in, file_out, config):
@@ -2180,7 +2195,7 @@ def delete_all_contents(config):
         config['BetweenFolder'],
         config['HeaderImageReplacedFoler'],
         config['FoundLogosFolder'],
-        config['ImagesFolder'],
+        # config['ImagesFolder'],
         config['OutputFolder']
     ]
 

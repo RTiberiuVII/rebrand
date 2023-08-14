@@ -32,8 +32,6 @@ import numpy as np
 from pptx import Presentation
 from pdf2docx import Converter as ConverterPdf2Docx
 from docx2pdf import convert as ConvertDocx2Pdf
-import threading
-import multiprocessing
 
 FILE_FORMAT_PDF_WORD = 17
 FILE_FORMAT_PDF_EXCEL = 0
@@ -657,7 +655,6 @@ def place_logo_header(zip_in, zip_out, config):
 
     # Add header image(s) to the catalog (if they're unique)
     if config['CompareLogoByPixels'] and num_files > 0:
-
         for image_location in header_images[file_name]:
             # Add image to the catalog
             add_image_to_catalog(zip_in, image_location, config)
@@ -685,29 +682,45 @@ def add_image_to_catalog(zip_in, image_location, config):
     zip_in.extract(image_location, path=config["BetweenFolder"])
     file_extension = os.path.splitext(config["BetweenFolder"] + image_location)[1]
     logo_is_present = False
+    image_is_transparent = False
 
-    # Get all logo paths from the catalog
-    logo_locations = os.listdir(config["FoundLogosFolder"])
+    # Check if image is transparent and omit it if it is
+    try:
+        image = Image.open(config["BetweenFolder"] + image_location)
+        if image.mode == 'RGBA':
+            image_is_transparent = all(pixel[3] == 0 for pixel in image.getdata())
+    except Exception as e:
+        print(f'Error occured when checking image transparency. Error: {e}')
+    
+    # Close the image
+    try:
+        image.close()
+    except Exception as e:
+        print(f'Error when closing the image. Error: {e}')
+        
+    if not image_is_transparent:
+        # Get all logo paths from the catalog
+        logo_locations = os.listdir(config["FoundLogosFolder"])
 
-    # Cycle through the entire catalog and check if header image is already present
-    for logo in logo_locations:
-        # Compare header image with logo
-        logo_is_present = compare_images(config["BetweenFolder"] + image_location,
-                                         config["FoundLogosFolder"] + logo)
-        if logo_is_present:
-            break
+        # Cycle through the entire catalog and check if header image is already present
+        for logo in logo_locations:
+            # Compare header image with logo
+            logo_is_present = compare_images(config["BetweenFolder"] + image_location,
+                                            config["FoundLogosFolder"] + logo)
+            if logo_is_present:
+                break
 
-    # Add image to the logo catalog folder
-    if not logo_is_present:
-        different_logos_found += 1
-        renamed_path = f'{config["BetweenFolder"]}{os.path.dirname(image_location)}/logo_' \
-                       f'{different_logos_found}{file_extension}'
-        os.rename(config["BetweenFolder"] + image_location, renamed_path)
-        shutil.move(renamed_path, config["FoundLogosFolder"])
+        # Add image to the logo catalog folder
+        if not logo_is_present:
+            different_logos_found += 1
+            renamed_path = f'{config["BetweenFolder"]}{os.path.dirname(image_location)}/logo_' \
+                        f'{different_logos_found}{file_extension}'
+            os.rename(config["BetweenFolder"] + image_location, renamed_path)
+            shutil.move(renamed_path, config["FoundLogosFolder"])
 
-    # Remove zip images empty base directory
-    zip_image_base_directory = image_location.split('/')[0]
-    shutil.rmtree(config["BetweenFolder"] + zip_image_base_directory)
+        # Remove zip images empty base directory
+        zip_image_base_directory = image_location.split('/')[0]
+        shutil.rmtree(config["BetweenFolder"] + zip_image_base_directory)
 
 
 def place_logo_body(file_in, file_out, config):
@@ -720,10 +733,7 @@ def place_logo_body(file_in, file_out, config):
 
     if file_in.endswith('.docx'):
         doc = Document(file_path)
-        if new_file_path in header_images: 
-            header_images_paths = header_images[new_file_path]
-        else:
-            header_images_paths = []
+        header_images_paths = header_images[new_file_path]
     elif file_in.endswith(skip_file_formats):
         # Move file and finish executing function
         os.rename(file_in, file_out)
@@ -960,7 +970,6 @@ def convert_to_pdf(file_in, config, word, excel, power_point):
 def process_file_word(file_in, file_out, config):
     file_path = file_in
     file_out_path = file_out
-    global log
 
     # log variables
     status, note, warning, text_note = '', '', '', ''
@@ -995,7 +1004,7 @@ def process_file_word(file_in, file_out, config):
     # Remove file from betweenFolder
     os.remove((config["BetweenFolder"]) + new_file_path)
 
-    # log.write(f"{file_in};{status};{note};{text_note};{warning}\n")
+    log.write(f"{file_in};{status};{note};{text_note};{warning}\n")
 
 
 def copy_and_replace_content_excel(file_in, file_out, config):
@@ -1043,7 +1052,7 @@ def copy_and_replace_content_excel(file_in, file_out, config):
             if len(image_locations) > 0:
                 # Compare all images with the logo catalog
                 for image_location in image_locations:
-                    add_image_to_catalog(zip_in=zip_in, image_location=image_location, config=config)
+                    # add_image_to_catalog(zip_in=zip_in, image_location=image_location, config=config) # Disabling adding image to catalog 
                     # print(image_location)
                     for logo_location in logo_locations:
                         # Do similarity check
@@ -1702,7 +1711,7 @@ def process_file_pdf(file_in, file_out, config):
     os.remove(config['InputFolder'] + f'/{file_name}.docx')
 
 
-def process_file(file_in, file_out, config, stop_timer):
+def process_file(file_in, file_out, config):
     """
     Replaces the old BHGE logo and copyright information
 
@@ -1738,8 +1747,7 @@ def process_file(file_in, file_out, config, stop_timer):
     if file_type is not None:
         file_run_times[file_type] = file_run_times[file_type] + (time() - duration)
 
-    # Stop timer thread
-    stop_timer.set()
+
 def add_missing_images(zip_in, zip_out):
     """
     Adds missing images from one Zip archive to another.
@@ -1892,7 +1900,7 @@ def main():
             # Sort files to process Word files (.docx, .doc, .docm) first before other file types
             sorted_files = sorted(os.listdir(config["InputFolder"]),
                                   key=lambda x: (not x.lower().endswith((".docx", ".doc", ".docm")), x))
-        
+
             # Loop over every file in the directory
             for file in sorted_files:
                 # Start timer
@@ -1926,27 +1934,7 @@ def main():
                 print(f"File {file_counter}/{file_count} -- Processing {file}")
                 try:
                     if os.path.getsize(file_in) != 0:
-                        # Initialize stop event
-                        stop_timer = multiprocessing.Event()
-
-                        # Start the file processing thread
-                        processing_thread = multiprocessing.Process(target=process_file, args=(file_in, file_out, config,  stop_timer,))
-
-                        # Start the timer thread
-                        timer_thread = multiprocessing.Process(target=timeout_counter, args=(stop_timer, config,))
-
-                        timer_thread.start()
-                        processing_thread.start()
-
-                        # Wait for timer thread to finish
-                        timer_thread.join()
-                        
-                        # Terminate thread if still alive
-                        if processing_thread.is_alive() and not stop_timer:
-                            log.write(f"{file_in};-;File failed to process!;Timeout\n")
-                            processing_thread.terminate()
-                            processing_thread.join()
-
+                        process_file(file_in, file_out, config)
                     else:
                         print(f"File skipped because it's empty: {file}")
                         log.write(f"{file_in};-;File skipped because it's empty!\n")
@@ -1989,6 +1977,7 @@ def main():
 
             # Loop over every file in the directory
             for file_body in sorted_files:
+                print('Processing file body: ', file_body)
                 process_time = time()
 
                 # Create input and output path and start file processing
@@ -2206,16 +2195,13 @@ def delete_all_contents(config):
         config['BetweenFolder'],
         config['HeaderImageReplacedFoler'],
         config['FoundLogosFolder'],
-        config['ImagesFolder'],
+        # config['ImagesFolder'],
         config['OutputFolder']
     ]
 
     for folder in folders:
         delete_folder_contents(folder)
 
-def timeout_counter(stop_timer, config):
-    if not stop_timer.wait(int(config['TimeOut']) * 60):
-        print('Timer terminating execution thread')
 
 if __name__ == "__main__":
     main()

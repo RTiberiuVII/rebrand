@@ -48,6 +48,8 @@ file_run_times = {
     'pdf': 0
 }
 
+FOLDERS = ['OutputFolder', 'LogFolder', 'BetweenFolder', 'HeaderImageReplacedFoler', 'FoundLogosFolder', 'ImagesFolder']
+
 
 def count_docx(file_name):
     document = Document(file_name)
@@ -1873,13 +1875,10 @@ def main():
             # End timer and output time
             print(f"Starting server took {time() - start_time:.3f} seconds")
 
-        # Check if output folder exists and create it if necessary
-        if not os.path.isdir(config["OutputFolder"]):
-            os.mkdir(config["OutputFolder"])
-
-        # Check if log folder exists and create it if necessary
-        if not os.path.isdir(config["LogFolder"]):
-            os.mkdir(config["LogFolder"])
+        # Check if folders exist and create them if necessary
+        for folder in FOLDERS:
+            if not os.path.isdir(config[folder]):
+                os.mkdir(config[folder])
 
         # Check if input directory exists
         if os.path.isdir(config["InputFolder"]):

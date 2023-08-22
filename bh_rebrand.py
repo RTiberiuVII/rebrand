@@ -2143,7 +2143,7 @@ def compare_images(image_path1, image_path2):
         deviation = np.mean(np.abs(image1_array - image2_array))
 
         # Pictures are similar if their deviation is lower than the set threshold
-        similarity = deviation < 20
+        similarity = deviation < 10
 
         # Increment counter
         image_comparisons += 1

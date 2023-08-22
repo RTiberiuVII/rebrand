@@ -1026,6 +1026,8 @@ def copy_and_replace_content_excel(file_in, file_out, config):
     -------
     """
 
+    logo, status, note, warning = '', '', '', ''
+
     new_file_path = os.path.basename(file_in)
 
     # Open the input Zip file for reading and the output Zip file for writing
@@ -1065,6 +1067,7 @@ def copy_and_replace_content_excel(file_in, file_out, config):
 
                         # If images are similar, replace them
                         if similarity:
+                            logo = 'Logo Found'
                             zip_image_location = f'{os.path.dirname(image_location)}/{os.path.basename(image_location)}'
 
                             # Resize the logo from catalog
@@ -1077,6 +1080,8 @@ def copy_and_replace_content_excel(file_in, file_out, config):
                             # Add new resized image to archive under the original image file name
                             zip_out.write(resized_image_path, zip_image_location, compress_type=ZIP_DEFLATED)
 
+                            note = f'Replaced image: {image_location}'
+
                             break  # Break out of the inner loop
 
                     else:  # If no similarity detected add the image file to the output archive
@@ -1086,6 +1091,12 @@ def copy_and_replace_content_excel(file_in, file_out, config):
 
             # Perform text replacement in the xml files
             _replace_text_excel(zip_in=zip_in, zip_out=zip_out, config=config)
+
+            if logo == '':
+                logo = 'No Logo Found'
+
+            status = 'File processed successfully'
+            log.write(f'{file_in};{logo};{status};{note};{warning}\n')
 
 
 def _replace_text_excel(zip_in, zip_out, config):
@@ -1244,6 +1255,8 @@ def process_file_powerpoint(file_in, file_out, config):
     -------
     """
 
+    logo, status, note, warning = '', '', '', ''
+
     file_path = file_in  # Path to the input file
     file_out_path = file_out  # Path to the output file
 
@@ -1290,6 +1303,7 @@ def process_file_powerpoint(file_in, file_out, config):
 
                         # If images are similar, replace them
                         if similarity:
+                            logo = 'Logo Found'
                             zip_image_location = f'{os.path.dirname(image_location)}/{os.path.basename(image_location)}'
 
                             # Resize the logo from catalog
@@ -1301,6 +1315,8 @@ def process_file_powerpoint(file_in, file_out, config):
 
                             # Add new resized image to archive under the original image file name
                             zip_out.write(resized_image_path, zip_image_location, compress_type=ZIP_DEFLATED)
+
+                            note = f'Replaced image: {image_location}'
 
                             break  # Break out of the inner loop
 
@@ -1327,9 +1343,16 @@ def process_file_powerpoint(file_in, file_out, config):
 
     insert_replacement_image_to_slide(prs=prs, config=config)  # Insert the BakerHughes logo in
 
-    change_bg_color(prs=prs)  # Change the background color of the slides in the presentation
-
+    changed_color = change_bg_color(prs=prs)  # Change the background color of the slides in the presentation
+    if changed_color:
+        note += ' - Changed background color on slides'
     prs.save(file_out_path)  # Save the presentation
+
+    if logo == '':
+        logo = 'No Logo Found'
+
+    status = 'File processed successfully'
+    log.write(f'{file_in};{logo};{status};{note};{warning}\n')
 
     return True
 
@@ -1386,6 +1409,8 @@ def change_bg_color(prs):
     # NEW COLORS - 05322b --> green, 1d2920 --> darker green, 018374 -> very light green
     # OLD COLORS - 005EB8 & 00B5E2
 
+    color_changed = False
+
     prefix_map = {
         'p': 'http://schemas.openxmlformats.org/presentationml/2006/main',
         'a': 'http://schemas.openxmlformats.org/drawingml/2006/main'
@@ -1405,6 +1430,10 @@ def change_bg_color(prs):
                             clr.attrib['val'] = '018374'
                         if clr.attrib['val'] == '00B5E2':
                             clr.attrib['val'] = '05322b'
+
+                        color_changed = True
+
+    return color_changed
 
 
 def _create_copyright_element():
@@ -2114,7 +2143,7 @@ def compare_images(image_path1, image_path2):
         deviation = np.mean(np.abs(image1_array - image2_array))
 
         # Pictures are similar if their deviation is lower than the set threshold
-        similarity = deviation < 10
+        similarity = deviation < 20
 
         # Increment counter
         image_comparisons += 1
@@ -2193,7 +2222,7 @@ def delete_all_contents(config):
     folders = [
         config['BetweenFolder'],
         config['HeaderImageReplacedFoler'],
-        config['FoundLogosFolder'],
+        # config['FoundLogosFolder'],
         # config['ImagesFolder'],
         config['OutputFolder']
     ]

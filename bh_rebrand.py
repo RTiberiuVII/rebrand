@@ -48,6 +48,8 @@ file_run_times = {
     'pdf': 0
 }
 
+FOLDERS = ['OutputFolder', 'LogFolder', 'BetweenFolder', 'HeaderImageReplacedFoler', 'FoundLogosFolder', 'ImagesFolder']
+
 
 def count_docx(file_name):
     document = Document(file_name)
@@ -1024,6 +1026,8 @@ def copy_and_replace_content_excel(file_in, file_out, config):
     -------
     """
 
+    logo, status, note, warning = '', '', '', ''
+
     new_file_path = os.path.basename(file_in)
 
     # Open the input Zip file for reading and the output Zip file for writing
@@ -1063,6 +1067,7 @@ def copy_and_replace_content_excel(file_in, file_out, config):
 
                         # If images are similar, replace them
                         if similarity:
+                            logo = 'Logo Found'
                             zip_image_location = f'{os.path.dirname(image_location)}/{os.path.basename(image_location)}'
 
                             # Resize the logo from catalog
@@ -1075,6 +1080,8 @@ def copy_and_replace_content_excel(file_in, file_out, config):
                             # Add new resized image to archive under the original image file name
                             zip_out.write(resized_image_path, zip_image_location, compress_type=ZIP_DEFLATED)
 
+                            note = f'Replaced image: {image_location}'
+
                             break  # Break out of the inner loop
 
                     else:  # If no similarity detected add the image file to the output archive
@@ -1084,6 +1091,12 @@ def copy_and_replace_content_excel(file_in, file_out, config):
 
             # Perform text replacement in the xml files
             _replace_text_excel(zip_in=zip_in, zip_out=zip_out, config=config)
+
+            if logo == '':
+                logo = 'No Logo Found'
+
+            status = 'File processed successfully'
+            log.write(f'{file_in};{logo};{status};{note};{warning}\n')
 
 
 def _replace_text_excel(zip_in, zip_out, config):
@@ -1162,10 +1175,10 @@ def process_file_excel(file_in, file_out, config):
     file_input_path = file_in  # Input file path
 
     # If file in wrong format then convert .xls or .xlsm file to .xlsx and update file path
-    # if file_input_path.endswith('.xls') or file_input_path.endswith('.xlsm'):
-    #     file_input_path = convert_file(file_in, FILE_FORMAT_XLSX)
-    #     # Update the output basename accordingly, so it will be saved as 'xlsx'
-    #     file_out = file_out.replace(file_out.rsplit(".")[-1], 'xlsx')
+    if file_input_path.endswith('.xls'):  # or file_input_path.endswith('.xlsm'):
+        file_input_path = convert_file(file_in, FILE_FORMAT_XLSX)
+        # Update the output basename accordingly, so it will be saved as 'xlsx'
+        file_out = file_out.replace(file_out.rsplit(".")[-1], 'xlsx')
 
     copy_and_replace_content_excel(file_in=file_input_path, file_out=file_out, config=config)
 
@@ -1242,6 +1255,8 @@ def process_file_powerpoint(file_in, file_out, config):
     -------
     """
 
+    logo, status, note, warning = '', '', '', ''
+
     file_path = file_in  # Path to the input file
     file_out_path = file_out  # Path to the output file
 
@@ -1288,6 +1303,7 @@ def process_file_powerpoint(file_in, file_out, config):
 
                         # If images are similar, replace them
                         if similarity:
+                            logo = 'Logo Found'
                             zip_image_location = f'{os.path.dirname(image_location)}/{os.path.basename(image_location)}'
 
                             # Resize the logo from catalog
@@ -1299,6 +1315,8 @@ def process_file_powerpoint(file_in, file_out, config):
 
                             # Add new resized image to archive under the original image file name
                             zip_out.write(resized_image_path, zip_image_location, compress_type=ZIP_DEFLATED)
+
+                            note = f'Replaced image: {image_location}'
 
                             break  # Break out of the inner loop
 
@@ -1325,9 +1343,16 @@ def process_file_powerpoint(file_in, file_out, config):
 
     insert_replacement_image_to_slide(prs=prs, config=config)  # Insert the BakerHughes logo in
 
-    change_bg_color(prs=prs)  # Change the background color of the slides in the presentation
-
+    changed_color = change_bg_color(prs=prs)  # Change the background color of the slides in the presentation
+    if changed_color:
+        note += ' - Changed background color on slides'
     prs.save(file_out_path)  # Save the presentation
+
+    if logo == '':
+        logo = 'No Logo Found'
+
+    status = 'File processed successfully'
+    log.write(f'{file_in};{logo};{status};{note};{warning}\n')
 
     return True
 
@@ -1384,6 +1409,8 @@ def change_bg_color(prs):
     # NEW COLORS - 05322b --> green, 1d2920 --> darker green, 018374 -> very light green
     # OLD COLORS - 005EB8 & 00B5E2
 
+    color_changed = False
+
     prefix_map = {
         'p': 'http://schemas.openxmlformats.org/presentationml/2006/main',
         'a': 'http://schemas.openxmlformats.org/drawingml/2006/main'
@@ -1403,6 +1430,10 @@ def change_bg_color(prs):
                             clr.attrib['val'] = '018374'
                         if clr.attrib['val'] == '00B5E2':
                             clr.attrib['val'] = '05322b'
+
+                        color_changed = True
+
+    return color_changed
 
 
 def _create_copyright_element():
@@ -1591,8 +1622,8 @@ def check_for_logo_collision_updated(slide):
             image_element = shape.element.find('.//ns0:cNvPr', prefix_map)
             if image_element.attrib is not None:
                 if 'descr' in image_element.attrib:
-                   #  if image_element.attrib['descr'] in ['replacementImage2.png', 'replacementImage.png']:
-                   if image_element.attrib['id'] == '1000' and image_element.attrib['name'] == 'Picture 999':
+                    #  if image_element.attrib['descr'] in ['replacementImage2.png', 'replacementImage.png']:
+                    if image_element.attrib['id'] == '1000' and image_element.attrib['name'] == 'Picture 999':
                         img_element_pr = shape.element
                         # break
         shape_element = shape.element.find('.//ns0:spPr', prefix_map)  # Find the Shape properties element
@@ -1873,13 +1904,10 @@ def main():
             # End timer and output time
             print(f"Starting server took {time() - start_time:.3f} seconds")
 
-        # Check if output folder exists and create it if necessary
-        if not os.path.isdir(config["OutputFolder"]):
-            os.mkdir(config["OutputFolder"])
-
-        # Check if log folder exists and create it if necessary
-        if not os.path.isdir(config["LogFolder"]):
-            os.mkdir(config["LogFolder"])
+        # Check if folders exist and create them if necessary
+        for folder in FOLDERS:
+            if not os.path.isdir(config[folder]):
+                os.mkdir(config[folder])
 
         # Check if input directory exists
         if os.path.isdir(config["InputFolder"]):
@@ -2194,7 +2222,7 @@ def delete_all_contents(config):
     folders = [
         config['BetweenFolder'],
         config['HeaderImageReplacedFoler'],
-        config['FoundLogosFolder'],
+        # config['FoundLogosFolder'],
         # config['ImagesFolder'],
         config['OutputFolder']
     ]

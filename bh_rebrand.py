@@ -450,7 +450,7 @@ def resize_image(input_image_path, output_image_folder, reference_image_path):
                 # Resize the input image with aspect ratio preserved
                 resized_image = input_image.resize((new_width, new_height))
                 # Create a blank image with the reference aspect ratio and paste the resized image onto it
-                result_image = Image.new("RGB", (ref_width, ref_height), (46, 46, 46))
+                result_image = Image.new("RGB", (ref_width, ref_height), (255, 255, 255))
                 offset = ((ref_width - new_width) // 2, (ref_height - new_height) // 2)
 
                 result_image.paste(resized_image, offset)

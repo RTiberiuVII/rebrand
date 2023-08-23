@@ -2005,7 +2005,6 @@ def main():
 
             # Loop over every file in the directory
             for file_body in sorted_files:
-                print('Processing file body: ', file_body)
                 process_time = time()
 
                 # Create input and output path and start file processing

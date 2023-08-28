@@ -1885,6 +1885,11 @@ def main():
         # Put elements of config file into a dictionary
         config = map_config(sys.argv[1])
 
+        # Check if folders exist and create them if necessary
+        for folder in FOLDERS:
+            if not os.path.isdir(config[folder]):
+                os.mkdir(config[folder])
+                
         # Clean the project before starting (used for testing)
         delete_all_contents(config)
 
@@ -1904,10 +1909,6 @@ def main():
             # End timer and output time
             print(f"Starting server took {time() - start_time:.3f} seconds")
 
-        # Check if folders exist and create them if necessary
-        for folder in FOLDERS:
-            if not os.path.isdir(config[folder]):
-                os.mkdir(config[folder])
 
         # Check if input directory exists
         if os.path.isdir(config["InputFolder"]):

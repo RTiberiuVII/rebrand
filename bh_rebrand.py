@@ -452,7 +452,7 @@ def resize_image(input_image_path, output_image_folder, reference_image_path):
                 # Resize the input image with aspect ratio preserved
                 resized_image = input_image.resize((new_width, new_height))
                 # Create a blank image with the reference aspect ratio and paste the resized image onto it
-                result_image = Image.new("RGB", (ref_width, ref_height), (46, 46, 46))
+                result_image = Image.new("RGB", (ref_width, ref_height), (255, 255, 255))
                 offset = ((ref_width - new_width) // 2, (ref_height - new_height) // 2)
 
                 result_image.paste(resized_image, offset)
@@ -1895,6 +1895,11 @@ def main():
         # Put elements of config file into a dictionary
         config = map_config(sys.argv[1])
 
+        # Check if folders exist and create them if necessary
+        for folder in FOLDERS:
+            if not os.path.isdir(config[folder]):
+                os.mkdir(config[folder])
+                
         # Clean the project before starting (used for testing)
         delete_all_contents(config)
 
@@ -1914,10 +1919,6 @@ def main():
             # End timer and output time
             print(f"Starting server took {time() - start_time:.3f} seconds")
 
-        # Check if folders exist and create them if necessary
-        for folder in FOLDERS:
-            if not os.path.isdir(config[folder]):
-                os.mkdir(config[folder])
 
         # Check if input directory exists
         if os.path.isdir(config["InputFolder"]):
@@ -2015,7 +2016,6 @@ def main():
 
             # Loop over every file in the directory
             for file_body in sorted_files:
-                print('Processing file body: ', file_body)
                 process_time = time()
 
                 # Create input and output path and start file processing

@@ -727,7 +727,7 @@ def add_image_to_catalog(zip_in, image_location, config):
 
 def place_logo_body(file_in, file_out, config):
     file_path = file_in
-    note = ''
+    logo_found, num_logos, status, note, warning = '', 0, '', '', '',
     isExcel = False
 
     new_file_path = os.path.basename(file_path)
@@ -785,6 +785,8 @@ def place_logo_body(file_in, file_out, config):
 
                         # Replace image if similar
                         if similar:
+                            logo_found = 'Logo Found'
+                            num_logos += 1
                             zip_image_location = f'{os.path.dirname(image)}/{os.path.basename(image)}'
 
                             # Resize logo from catalog
@@ -795,7 +797,7 @@ def place_logo_body(file_in, file_out, config):
                             zip_out.write(logo_replacement_path, zip_image_location, compress_type=ZIP_DEFLATED)
 
                             # Add note
-                            note += f'Replaced similar image at: {image} '
+                            note += f'Replaced image: {image} '
 
                             break
 
@@ -818,6 +820,12 @@ def place_logo_body(file_in, file_out, config):
 
     # Remove file from original location
     os.remove(file_in)
+
+    if logo_found == '':
+        logo_found = 'No Logo Found'
+
+    status = 'File processed successfully'
+    log.write(f'{file_in};{logo_found};{str(num_logos)};{status};{note};{warning}\n')
 
 
 def get_filetype(file, config):
@@ -1006,7 +1014,7 @@ def process_file_word(file_in, file_out, config):
     # Remove file from betweenFolder
     os.remove((config["BetweenFolder"]) + new_file_path)
 
-    log.write(f"{file_in};{status};{note};{text_note};{warning}\n")
+    log.write(f"{file_in};{status};-;{note};{text_note};{warning}\n")
 
 
 def copy_and_replace_content_excel(file_in, file_out, config):
@@ -1026,7 +1034,7 @@ def copy_and_replace_content_excel(file_in, file_out, config):
     -------
     """
 
-    logo, status, note, warning = '', '', '', ''
+    logo, num_logos, status, note, warning = '', 0, '', '', ''
 
     new_file_path = os.path.basename(file_in)
 
@@ -1068,6 +1076,7 @@ def copy_and_replace_content_excel(file_in, file_out, config):
                         # If images are similar, replace them
                         if similarity:
                             logo = 'Logo Found'
+                            num_logos += 1
                             zip_image_location = f'{os.path.dirname(image_location)}/{os.path.basename(image_location)}'
 
                             # Resize the logo from catalog
@@ -1080,7 +1089,7 @@ def copy_and_replace_content_excel(file_in, file_out, config):
                             # Add new resized image to archive under the original image file name
                             zip_out.write(resized_image_path, zip_image_location, compress_type=ZIP_DEFLATED)
 
-                            note = f'Replaced image: {image_location}'
+                            note += f'Replaced image: {image_location}, '
 
                             break  # Break out of the inner loop
 
@@ -1096,7 +1105,7 @@ def copy_and_replace_content_excel(file_in, file_out, config):
                 logo = 'No Logo Found'
 
             status = 'File processed successfully'
-            log.write(f'{file_in};{logo};{status};{note};{warning}\n')
+            log.write(f'{file_in};{logo};{str(num_logos)};{status};{note};{warning}\n')
 
 
 def _replace_text_excel(zip_in, zip_out, config):
@@ -1255,7 +1264,7 @@ def process_file_powerpoint(file_in, file_out, config):
     -------
     """
 
-    logo, status, note, warning = '', '', '', ''
+    logo, num_logos, status, note, warning = '', 0, '', '', ''
 
     file_path = file_in  # Path to the input file
     file_out_path = file_out  # Path to the output file
@@ -1304,6 +1313,7 @@ def process_file_powerpoint(file_in, file_out, config):
                         # If images are similar, replace them
                         if similarity:
                             logo = 'Logo Found'
+                            num_logos += 1
                             zip_image_location = f'{os.path.dirname(image_location)}/{os.path.basename(image_location)}'
 
                             # Resize the logo from catalog
@@ -1316,7 +1326,7 @@ def process_file_powerpoint(file_in, file_out, config):
                             # Add new resized image to archive under the original image file name
                             zip_out.write(resized_image_path, zip_image_location, compress_type=ZIP_DEFLATED)
 
-                            note = f'Replaced image: {image_location}'
+                            note += f'Replaced image: {image_location}, '
 
                             break  # Break out of the inner loop
 
@@ -1344,15 +1354,15 @@ def process_file_powerpoint(file_in, file_out, config):
     insert_replacement_image_to_slide(prs=prs, config=config)  # Insert the BakerHughes logo in
 
     changed_color = change_bg_color(prs=prs)  # Change the background color of the slides in the presentation
-    if changed_color:
-        note += ' - Changed background color on slides'
+    #if changed_color:
+        #note += ' - Changed background color on slides'
     prs.save(file_out_path)  # Save the presentation
 
     if logo == '':
         logo = 'No Logo Found'
 
     status = 'File processed successfully'
-    log.write(f'{file_in};{logo};{status};{note};{warning}\n')
+    log.write(f'{file_in};{logo};{str(num_logos)};{status};{note};{warning}\n')
 
     return True
 
@@ -1869,7 +1879,7 @@ def prepare_log(config):
     log = open(log_path, "w+", encoding="utf-8")
 
     log.write("sep=;\n")
-    log.write("Inputfile;Logo;Notes;LegacyText;Warning\n")
+    log.write("Inputfile;Logo;NumLogos;Notes;LegacyText;Warning\n")
 
     print(f"Logging in file {log_name}")
     return log, log_path
@@ -1949,7 +1959,7 @@ def main():
                 # Check if filetype is supported
                 if "filetype" not in config:
                     print(f"Filetype of {file} not supported")
-                    log.write(f"{file_in};-;Filetype not supported\n")
+                    log.write(f"{file_in};-;-;Filetype not supported;-;-\n")
                     continue
 
                 # Format the OldLogoPath
@@ -1965,11 +1975,11 @@ def main():
                         process_file(file_in, file_out, config)
                     else:
                         print(f"File skipped because it's empty: {file}")
-                        log.write(f"{file_in};-;File skipped because it's empty!\n")
+                        log.write(f"{file_in};-;-;File skipped because it's empty!;-;-\n")
                 except Exception as e:
                     print(f'File failed to process! File name: {file}\nError: {e}')
                     process_file_failure_count += 1
-                    log.write(f"{file_in};-;File failed to process!;Error:{e}\n")
+                    log.write(f"{file_in};-;-;File failed to process!;Error:{e};-\n")
                 # End timer and output time
                 file_counter += 1
                 print(f"Processing took {time() - start_time:.3f} seconds")
@@ -2018,7 +2028,7 @@ def main():
                 # Check if filetype is supported
                 if "filetype" not in config:
                     print(f"Filetype of {file_body} not supported")
-                    log.write(f"{file_in};-;Filetype not supported\n")
+                    log.write(f"{file_in};-;-;Filetype not supported;-;-\n")
                     continue
 
                 # Replace image inside body
@@ -2028,7 +2038,7 @@ def main():
                 except Exception as e:
                     print(f'Failed replacing the body images for file: {file_body} \nError: {e}')
                     body_replace_failure_count += 1
-                    log.write(f"{file_in};-;Failed replacing the body images!;Error:{e}\n")
+                    log.write(f"{file_in};-;-;Failed replacing the body images!;Error:{e};-\n")
 
                 file_counter += 1
                 # Remove file from headerImageReplaced folder

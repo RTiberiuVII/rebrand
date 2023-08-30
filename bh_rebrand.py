@@ -4,7 +4,7 @@ Date: 21/06/2023
 Version: 1.3
 Purpose:
 Rebrand MS Office documents (Word, Excel PowerPoint) from
-    former â€œBHGEâ€ to current Baker Hughes Company style and re-create PDF files
+    former GE Company to current Baker Hughes Company style and re-create PDF files
 Applies to company logo, company name, document font, brand colors
 
 """
@@ -40,7 +40,6 @@ FILE_FORMAT_PDF_EXCEL = 0
 FILE_FORMAT_PDF_PPT = 2
 FILE_FORMAT_XLSX = 51
 FILE_FORMAT_DOCX = 16
-different_logos_found = 0
 image_comparisons = 0
 header_images = {}
 file_run_times = {
@@ -49,7 +48,6 @@ file_run_times = {
     'powerpoint': 0,
     'pdf': 0
 }
-
 
 def count_docx(file_name):
     document = Document(file_name)
@@ -602,7 +600,7 @@ def check_header_images(zip_in, config, note):
     return note
 
 
-def place_logo_header(zip_in, zip_out, config):
+def place_logo_header(zip_in, zip_out, config, different_logos_found):
     """
     Places the new BH logo in the Word document
 
@@ -628,7 +626,6 @@ def place_logo_header(zip_in, zip_out, config):
     warning: string
         warning if multiple header images have been replaced
     """
-    global different_logos_found
     status = "LogoNotFound"
     note = ""
     warning = ""
@@ -660,12 +657,12 @@ def place_logo_header(zip_in, zip_out, config):
 
         for image_location in header_images[file_name]:
             # Add image to the catalog
-            add_image_to_catalog(zip_in, image_location, config)
+            add_image_to_catalog(zip_in, image_location, config, different_logos_found)
 
     return status, note, warning
 
 
-def add_image_to_catalog(zip_in, image_location, config):
+def add_image_to_catalog(zip_in, image_location, config, different_logos_found):
     """
     Extracts the image from a zipfile path, and adds it to the catalog of logos if it's unique.
 
@@ -680,7 +677,6 @@ def add_image_to_catalog(zip_in, image_location, config):
     config: dictionary
         dict containing information from the config file
     """
-    global different_logos_found
     # Extract image
     zip_in.extract(image_location, path=config["BetweenFolder"])
     file_extension = os.path.splitext(config["BetweenFolder"] + image_location)[1]
@@ -699,9 +695,12 @@ def add_image_to_catalog(zip_in, image_location, config):
 
     # Add image to the logo catalog folder
     if not logo_is_present:
-        different_logos_found += 1
+        # Inside the loop where different logos are found
+        different_logos_found.value += 1
+        print('Image to catalog counter: ', different_logos_found.value)
         renamed_path = f'{config["BetweenFolder"]}{os.path.dirname(image_location)}/logo_' \
-                       f'{different_logos_found}{file_extension}'
+                    f'{different_logos_found.value}{file_extension}'
+        print('Path: ', renamed_path)
         os.rename(config["BetweenFolder"] + image_location, renamed_path)
         shutil.move(renamed_path, config["FoundLogosFolder"])
 
@@ -957,7 +956,7 @@ def convert_to_pdf(file_in, config, word, excel, power_point):
         presentation.close()
 
 
-def process_file_word(file_in, file_out, config):
+def process_file_word(file_in, file_out, config, different_logos_found):
     file_path = file_in
     file_out_path = file_out
     global log
@@ -988,7 +987,7 @@ def process_file_word(file_in, file_out, config):
             # copy document and replace content
             copy_and_replace(zip_in, zip_out, config)
             # check for logo
-            status, note, warning = place_logo_header(zip_in, zip_out, config)
+            status, note, warning = place_logo_header(zip_in, zip_out, config, different_logos_found)
             # Add missing images
             add_missing_images(zip_in, zip_out)
 
@@ -1685,7 +1684,7 @@ def disable_background_graphics(zip_in, zip_out, xml_path):
 pdfs = []
 
 
-def process_file_pdf(file_in, file_out, config):
+def process_file_pdf(file_in, file_out, config, different_logos_found):
     file_path = file_in
     pdfs.append(file_path.split('\\')[-1])
     file_name = file_path.split('\\')[-1][0:-4]
@@ -1697,12 +1696,12 @@ def process_file_pdf(file_in, file_out, config):
         cv_pdf_2_docx.close()
 
     process_file_word(file_in=config['InputFolder'] + f'/{file_name}.docx',
-                      file_out=file_out_path, config=config)
+                      file_out=file_out_path, config=config, different_logos_found=different_logos_found)
 
     os.remove(config['InputFolder'] + f'/{file_name}.docx')
 
 
-def process_file(file_in, file_out, config, stop_timer):
+def process_file(file_in, file_out, config, different_logos_found):
     """
     Replaces the old BHGE logo and copyright information
 
@@ -1724,7 +1723,7 @@ def process_file(file_in, file_out, config, stop_timer):
     file_extension = pathlib.Path(file_in).suffix
     match file_extension:
         case '.doc' | '.docx' | '.docm':
-            process_file_word(file_in, file_out, config)
+            process_file_word(file_in, file_out, config, different_logos_found)
         case '.xlsx' | '.xls' | 'xlsm':
             process_file_excel(file_in, file_out, config)
             file_type = 'excel'
@@ -1732,14 +1731,12 @@ def process_file(file_in, file_out, config, stop_timer):
             process_file_powerpoint(file_in, file_out, config)
             file_type = 'powerpoint'
         case '.pdf':
-            process_file_pdf(file_in, file_out, config)
+            process_file_pdf(file_in, file_out, config, different_logos_found)
             file_type = 'pdf'
 
     if file_type is not None:
         file_run_times[file_type] = file_run_times[file_type] + (time() - duration)
 
-    # Stop timer thread
-    stop_timer.set()
 def add_missing_images(zip_in, zip_out):
     """
     Adds missing images from one Zip archive to another.
@@ -1892,87 +1889,97 @@ def main():
             # Sort files to process Word files (.docx, .doc, .docm) first before other file types
             sorted_files = sorted(os.listdir(config["InputFolder"]),
                                   key=lambda x: (not x.lower().endswith((".docx", ".doc", ".docm")), x))
-        
-            # Loop over every file in the directory
-            for file in sorted_files:
-                # Start timer
-                start_time = time()
 
-                # Create input and output path and start file processing
-                file_in = os.path.join(config["InputFolder"], file)
-                file_out = os.path.join(output_folder, file)
+            # Create a process pool
+            num_processes = 2
 
-                # Check if current file is a path to a folder
-                if os.path.isdir(file_in):
-                    # Ignore folder and continue
-                    continue
+            with multiprocessing.Pool(processes=num_processes) as pool:
+                # Create a manager to manage shared values
+                with multiprocessing.Manager() as manager:
+                    different_logos_found = manager.Value('i', 0)
 
-                # Get the current filetype
-                config = get_filetype(file, config)
+                    # Loop over every file in the directory
+                    for file in sorted_files:
+                        # Start timer
+                        start_time = time()
 
-                # Check if filetype is supported
-                if "filetype" not in config:
-                    print(f"Filetype of {file} not supported")
-                    log.write(f"{file_in};-;Filetype not supported\n")
-                    continue
+                        # Create input and output path and start file processing
+                        file_in = os.path.join(config["InputFolder"], file)
+                        file_out = os.path.join(output_folder, file)
 
-                # Format the OldLogoPath
-                config["OldLogoPath_formatted"] = config["OldLogoPath"].format(
-                    filetype=config["filetype"])
-                config["LegacyBHLogoPath_formatted"] = config["LegacyBHLogoPath"].format(
-                    filetype=config["filetype"])
+                        # Check if current file is a path to a folder
+                        if os.path.isdir(file_in):
+                            # Ignore folder and continue
+                            continue
 
-                # Process the file if it's not empty
-                print(f"File {file_counter}/{file_count} -- Processing {file}")
-                try:
-                    if os.path.getsize(file_in) != 0:
-                        # Initialize stop event
-                        stop_timer = multiprocessing.Event()
+                        # Get the current filetype
+                        config = get_filetype(file, config)
 
-                        # Start the file processing thread
-                        processing_thread = multiprocessing.Process(target=process_file, args=(file_in, file_out, config,  stop_timer,))
+                        # Check if filetype is supported
+                        if "filetype" not in config:
+                            print(f"Filetype of {file} not supported")
+                            log.write(f"{file_in};-;Filetype not supported\n")
+                            continue
 
-                        # Start the timer thread
-                        timer_thread = multiprocessing.Process(target=timeout_counter, args=(stop_timer, config,))
+                        # Format the OldLogoPath
+                        config["OldLogoPath_formatted"] = config["OldLogoPath"].format(
+                            filetype=config["filetype"])
+                        config["LegacyBHLogoPath_formatted"] = config["LegacyBHLogoPath"].format(
+                            filetype=config["filetype"])
 
-                        timer_thread.start()
-                        processing_thread.start()
+                        # Process the file if it's not empty
+                        print(f"File {file_counter}/{file_count} -- Processing {file}")
+                        # try:
+                        if os.path.getsize(file_in) != 0:
+                            # Initialize stop event
+                            stop_timer = multiprocessing.Event()
 
-                        # Wait for timer thread to finish
-                        timer_thread.join()
-                        
-                        # Terminate thread if still alive
-                        if processing_thread.is_alive() and not stop_timer:
-                            log.write(f"{file_in};-;File failed to process!;Timeout\n")
-                            processing_thread.terminate()
-                            processing_thread.join()
+                            # Start both functions in the same process pool
+                            processing_result = pool.apply_async(process_file, args=(file_in, file_out, config, different_logos_found))
+                            timeout_result = pool.apply_async(timeout_counter, args=(stop_timer, config))
 
-                    else:
-                        print(f"File skipped because it's empty: {file}")
-                        log.write(f"{file_in};-;File skipped because it's empty!\n")
-                except Exception as e:
-                    print(f'File failed to process! File name: {file}\nError: {e}')
-                    process_file_failure_count += 1
-                    log.write(f"{file_in};-;File failed to process!;Error:{e}\n")
-                # End timer and output time
-                file_counter += 1
-                print(f"Processing took {time() - start_time:.3f} seconds")
+                            try:
+                                # Wait for the processing to finish or timeout
+                                processing_result.get(timeout=int(config["TimeOut"]))
 
-                # Convert to PDF
-                if pdf_conversion:
-                    # Start timer
-                    start_converting_time = time()
+                                # Stop the timer if processing finished
+                                stop_timer.set()
 
-                    # Convert file using COM server
-                    print(f"Converting {file} to PDF")
-                    config["PDFPath"] = os.path.join(output_folder,
-                                                     file[0:file.rfind(".")] + ".pdf")
+                                # Terminate the timeout_result process
+                                # TODO
+                            except multiprocessing.TimeoutError:
+                                print(f"Processing of {file} timed out")
+                                log.write(f"{file_in};-;File processing timed out\n")
+                                # Stop the timer if processing failed
+                                stop_timer.set()
 
-                    # Convert the file to pdf
-                    convert_to_pdf(file_out, config, word, excel, power_point)
+                        else:
+                            print(f"File skipped because it's empty: {file}")
+                            log.write(f"{file_in};-;File skipped because it's empty!\n")
+                            
+                        # except Exception as e:
+                        #     print(f'File failed to process! File name: {file}\nError: {e}')
+                        #     process_file_failure_count += 1
+                        #     log.write(f"{file_in};-;File failed to process!;Error:{e}\n")
+                        # End timer and output time
+                        file_counter += 1
+                        print(f"Processing took {time() - start_time:.3f} seconds")
 
-                    # End timer and output time
-                    print(f"Converting took {time() - start_converting_time:.3f} seconds")
+                        # Convert to PDF
+                        if pdf_conversion:
+                            # Start timer
+                            start_converting_time = time()
+
+                            # Convert file using COM server
+                            print(f"Converting {file} to PDF")
+                            config["PDFPath"] = os.path.join(output_folder,
+                                                            file[0:file.rfind(".")] + ".pdf")
+
+                            # Convert the file to pdf
+                            convert_to_pdf(file_out, config, word, excel, power_point)
+
+                            # End timer and output time
+                            print(f"Converting took {time() - start_converting_time:.3f} seconds")
         else:
             print("Specify an existing input folder containing the documents and an output folder")
 
@@ -2214,7 +2221,7 @@ def delete_all_contents(config):
         delete_folder_contents(folder)
 
 def timeout_counter(stop_timer, config):
-    if not stop_timer.wait(int(config['TimeOut']) * 10):
+    if not stop_timer.wait(int(config['TimeOut'])):
         print('Timer terminating execution thread')
 
 if __name__ == "__main__":

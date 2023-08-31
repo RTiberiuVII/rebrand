@@ -646,6 +646,8 @@ def place_logo_header(zip_in, zip_out, config):
     headercount = 0
     header_image_paths = []
 
+    log_information['NumLogos'] = '-'
+
     # Check if every image in the header should be replaced
     if "true" in config["ReplaceHeaderImage"].lower():
         note, warning, header_image_paths = replace_header_images(zip_in, zip_out, config, note)
@@ -1988,6 +1990,10 @@ def main():
                 try:
                     if os.path.getsize(file_in) != 0:
                         process_file(file_in, file_out, config)
+                        processing_time = time() - start_time
+                        log_information['Time'] = processing_time
+                        log.write(';'.join([str(value) for key, value in log_information.items() if key]) + '\n')
+                        reset_log_info()
                     else:
                         print(f"File skipped because it's empty: {file}")
                         log.write(f"{file_in};-;-;File skipped because it's empty!;-;-\n")
@@ -1997,12 +2003,12 @@ def main():
                     log.write(f"{file_in};-;-;File failed to process!;Error:{e};-\n")
                 # End timer and output time
                 file_counter += 1
-                processing_time = time() - start_time
-                log_information['Time'] = processing_time
-                print(f"Processing took {processing_time:.3f} seconds")
-                if processing_time:
-                    log.write(';'.join([str(value) for key, value in log_information.items() if key]) + '\n')
-                    reset_log_info()
+                #processing_time = time() - start_time
+                #log_information['Time'] = processing_time
+                print(f"Processing took {time() - start_time:.3f} seconds")
+                #if processing_time:
+                    #log.write(';'.join([str(value) for key, value in log_information.items() if key]) + '\n')
+                    #reset_log_info()
 
                 # Convert to PDF
                 if pdf_conversion:
@@ -2054,6 +2060,10 @@ def main():
                 print(f'File {file_counter}/{file_count} -- Replacing body image for: {file_body}')
                 try:
                     place_logo_body(file_in, file_out, config)
+                    if file_in.endswith('.docx'):
+                        log_information['Time'] = time() - process_time
+                        log.write(';'.join([str(value) for key, value in log_information.items() if key]) + '\n')
+                        reset_log_info()
                 except Exception as e:
                     print(f'Failed replacing the body images for file: {file_body} \nError: {e}')
                     body_replace_failure_count += 1
@@ -2074,10 +2084,10 @@ def main():
                 else:
                     # Increment word processing timer
                     file_run_times['word'] = file_run_times['word'] + (time() - process_time)
-                    if file_in.endswith('.docx'):
-                        log_information['Time'] = time() - process_time
-                        log.write(';'.join([str(value) for key, value in log_information.items() if key]) + '\n')
-                        reset_log_info()
+                    #if file_in.endswith('.docx'):
+                        #log_information['Time'] = time() - process_time
+                        #log.write(';'.join([str(value) for key, value in log_information.items() if key]) + '\n')
+                        #reset_log_info()
 
         # Close COM Server
         if pdf_conversion:

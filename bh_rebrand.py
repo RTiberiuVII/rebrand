@@ -8,12 +8,11 @@ Rebrand MS Office documents (Word, Excel PowerPoint) from
 Applies to company logo, company name, document font, brand colors
 
 """
-
+import multiprocessing
 import sys
 import os
-import re
 import xml
-from time import time, strftime, gmtime
+from time import time, strftime, gmtime, sleep
 from datetime import datetime
 from re import search, findall
 from zipfile import ZipFile, ZIP_DEFLATED
@@ -25,7 +24,6 @@ import comtypes.client
 import xml.etree.ElementTree as ET
 import win32com.client as win32
 import shutil
-import openpyxl
 import pathlib
 from PIL import Image
 import numpy as np
@@ -38,14 +36,14 @@ FILE_FORMAT_PDF_EXCEL = 0
 FILE_FORMAT_PDF_PPT = 2
 FILE_FORMAT_XLSX = 51
 FILE_FORMAT_DOCX = 16
-different_logos_found = 0
+different_logos_found = 800
 image_comparisons = 0
 header_images = {}
 file_run_times = {
-    'excel': 0,
-    'word': 0,
-    'powerpoint': 0,
-    'pdf': 0
+    'excel': 0.0,
+    'word': 0.0,
+    'powerpoint': 0.0,
+    'pdf': 0.0
 }
 
 log_information = {
@@ -60,8 +58,10 @@ log_information = {
 
 FOLDERS = ['OutputFolder', 'LogFolder', 'BetweenFolder', 'HeaderImageReplacedFoler', 'FoundLogosFolder', 'ImagesFolder']
 
+# Hold PDF Document ID numbers to keep track of .docx files that need to be converted back to PDF
+pdfs = []
 
-def count_docx(file_name):
+"""def count_docx(file_name):
     document = Document(file_name)
 
     newparatextlist = []
@@ -75,7 +75,7 @@ def shuttle_text(shuttle):
     t = ''
     for i in shuttle:
         t += i.text
-    return t
+    return t"""
 
 
 def replace_text(runs, target, replace):
@@ -184,12 +184,12 @@ def docx_replace(doc, target, replace):
             for link in paragraph._element.xpath(".//w:hyperlink"):
                 replace_text(link.xpath("w:r", namespaces=link.nsmap), target, replace)
     except IndexError:
-        warning += 'File is skipped because of an indexerror!.'
+        warning += 'File is skipped because of an index error!'
 
     return warning
 
 
-def text_rebrand(file_in, config):
+"""def text_rebrand(file_in, config):
     # Store file path from CL Arguments.
     file_path = file_in
 
@@ -204,64 +204,49 @@ def text_rebrand(file_in, config):
         for replace_duo in config["ReplaceString"]:
             # initialize the number of occurrences to 0
             occurrences[replace_duo[0]] = 0
-
             # Loop through sections for header footer content
             for section in doc.sections:
-
                 # Check text of first page header
-                fheader = section.first_page_header
-                # fheader.is_linked_to_previous = True
+                fp_header = section.first_page_header
 
-                for fheaderpar in fheader.paragraphs:
-
+                for fp_header_par in fp_header.paragraphs:
                     # check if paragraph contains text
-                    if fheaderpar.text:
-
+                    if fp_header_par.text:
                         # check if target text exists in paragraph text
-                        if replace_duo[0] in fheaderpar.text:
-                            text = fheaderpar.text.replace(replace_duo[0], replace_duo[1])
-
-                            if text != fheaderpar.text:
+                        if replace_duo[0] in fp_header_par.text:
+                            text = fp_header_par.text.replace(replace_duo[0], replace_duo[1])
+                            if text != fp_header_par.text:
                                 # Replace the text and increment the number of occurrences
-                                fheaderpar.text = text
+                                fp_header_par.text = text
                                 occurrences[replace_duo[0]] += 1
 
                 # Check text of first page footer
-                ffooter = section.first_page_footer
-                # ffooter.is_linked_to_previous = True
+                fp_footer = section.first_page_footer
 
-                for ffooterpar in ffooter.paragraphs:
-
+                for fp_footer_par in fp_footer.paragraphs:
                     # check if paragraph contains text
-                    if ffooterpar.text:
+                    if fp_footer_par.text:
                         # check if target text exists in paragraph text
-                        if replace_duo[0] in ffooterpar.text:
-                            text = ffooterpar.text.replace(replace_duo[0], replace_duo[1])
-
-                            if text != ffooterpar.text:
+                        if replace_duo[0] in fp_footer_par.text:
+                            text = fp_footer_par.text.replace(replace_duo[0], replace_duo[1])
+                            if text != fp_footer_par.text:
                                 # Replace the text and increment the number of occurrences
-                                ffooterpar.text = text
+                                fp_footer_par.text = text
                                 occurrences[replace_duo[0]] += 1
 
         # Loop through tables in document
         for table in tables:
-
             # Loop through rows in table
             for row in table.rows:
-
                 # Loop through cells in row
                 for cell in row.cells:
-
                     # Loop through paragraphs in cell
                     for paragraph in cell.paragraphs:
-
                         # check if paragraph contains text
                         if paragraph.text:
-
                             # check if target text exists in paragraph text
                             if replace_duo[0] in paragraph.text:
                                 text = paragraph.text.replace(replace_duo[0], replace_duo[1])
-
                                 # Check if replaced text is not the same as original
                                 if text != paragraph.text:
                                     # Replace the text and increment the number of occurrences
@@ -270,17 +255,11 @@ def text_rebrand(file_in, config):
 
         # Loop through paragraphs
         for para in doc.paragraphs:
-
             # check if paragraph contains text
             if para.text:
-
                 # check if target text exists in paragraph text
                 if replace_duo[0] in para.text:
-                    # replaced_text = re.sub(str(replace_duo[0]), str(replace_duo[1]), run.text, 999)
-                    # style = run.style
-                    # run.style = style
                     text = para.text.replace(replace_duo[0], replace_duo[1])
-
                     # Check if replaced text is not the same as original
                     if text != para.text:
                         # Replace the text and increment the number of occurrences
@@ -293,11 +272,9 @@ def text_rebrand(file_in, config):
 
                 # Check if hyperlink contains text
                 if inner_run.text:
-
                     # Check if hyperlink text contains target tex
                     if replace_duo[0] in inner_run.text:
                         text = inner_run.text.replace(replace_duo[0], replace_duo[1])
-
                         # Check if replaced text is not the same as original
                         if text != inner_run.text:
                             # Replace the text and increment the number of occurrences
@@ -309,22 +286,19 @@ def text_rebrand(file_in, config):
         if count > 0:
             print(f"{word} ({count})")
 
-    # make a new file name by adding "_new" to the original file name
-    # new_file_path = file_path.replace(".docx", "_new.docx")
     # save the new docx file
     new_file_path = os.path.basename(file_path)
     doc.save((config["OutputFolder"]) + new_file_path)
 
-    return
+    return"""
 
-
-def paragraph_replace_text(paragraph, regex, replace_str):
-    """
+"""def paragraph_replace_text(paragraph, regex, replace_str):
+    ""
     Return `paragraph` after replacing all matches for `regex` with `replace_str`.
 
     `regex` is a compiled regular expression prepared with `re.compile(pattern)`
     according to the Python library documentation for the `re` module.
-    """
+    ""
     # --- a paragraph may contain more than one match, loop until all are replaced ---
     while True:
         text = paragraph.text
@@ -369,10 +343,10 @@ def paragraph_replace_text(paragraph, regex, replace_str):
     #         r = run._r
     #         r.getparent().remove(r)
 
-    return paragraph
+    return paragraph"""
 
 
-def copy_and_replace(zip_in, zip_out, config):
+def copy_and_replace(zip_in, zip_out):
     """
     Copies the zip file except for the media folder
 
@@ -383,35 +357,25 @@ def copy_and_replace(zip_in, zip_out, config):
 
     zip_out: ZipFile obj
         output ZipFile
-
-    config: dictionary
-        dict contain information from the config file
     """
     # XML files that contain image crop data
     xml_name_crop = ['header1.xml', 'header2.xml', 'header3.xml']
     # Go over every file in the input document
-    textnote = ""
     for path in zip_in.namelist():
         already_added = False
         # Check if the path is not in the media folder
         if "media" not in path:
             file_content = zip_in.read(path)
-            # print('Path: ', path, ' Test: ', any(element in path for element in xml_name_crop))
             # Remove crop from images
             if any(element in path for element in xml_name_crop):
                 already_added = _modify_xml_image_crop_fit(zip_in, zip_out, path)
-                # try:
-                # except Exception as e:
-                #     print('Failed to remove crop from image')
 
             # Copy file into new document
             if not already_added:
                 zip_out.writestr(path, file_content)
 
-    return textnote
 
-
-def try_decode(content):
+"""def try_decode(content):
     encodings = ['utf-8', 'latin-1']  # Add more encodings if necessary
     for encoding in encodings:
         try:
@@ -419,7 +383,7 @@ def try_decode(content):
             return decoded_content
         except UnicodeDecodeError:
             continue
-    return None
+    return None"""
 
 
 def resize_image(input_image_path, output_image_folder, reference_image_path):
@@ -639,14 +603,14 @@ def place_logo_header(zip_in, zip_out, config):
     warning: string
         warning if multiple header images have been replaced
     """
-    global different_logos_found
+
     status = "LogoNotFound"
     note = ""
     warning = ""
     headercount = 0
     header_image_paths = []
 
-    log_information['NumLogos'] = '-'
+    log_information['NumLogos'] = 0
 
     # Check if every image in the header should be replaced
     if "true" in config["ReplaceHeaderImage"].lower():
@@ -703,15 +667,13 @@ def add_image_to_catalog(zip_in, image_location, config):
         image = Image.open(config["BetweenFolder"] + image_location)
         if image.mode == 'RGBA':
             image_is_transparent = all(pixel[3] == 0 for pixel in image.getdata())
+        try:
+            image.close()
+        except Exception as e:
+            print(f'Error when closing the image. Error: {e}')
     except Exception as e:
-        print(f'Error occured when checking image transparency. Error: {e}')
-    
-    # Close the image
-    try:
-        image.close()
-    except Exception as e:
-        print(f'Error when closing the image. Error: {e}')
-        
+        print(f'Error occurred when checking image transparency. Error: {e}')
+
     if not image_is_transparent:
         # Get all logo paths from the catalog
         logo_locations = os.listdir(config["FoundLogosFolder"])
@@ -720,7 +682,7 @@ def add_image_to_catalog(zip_in, image_location, config):
         for logo in logo_locations:
             # Compare header image with logo
             logo_is_present = compare_images(config["BetweenFolder"] + image_location,
-                                            config["FoundLogosFolder"] + logo)
+                                             config["FoundLogosFolder"] + logo)
             if logo_is_present:
                 break
 
@@ -728,7 +690,7 @@ def add_image_to_catalog(zip_in, image_location, config):
         if not logo_is_present:
             different_logos_found += 1
             renamed_path = f'{config["BetweenFolder"]}{os.path.dirname(image_location)}/logo_' \
-                        f'{different_logos_found}{file_extension}'
+                           f'{different_logos_found}{file_extension}'
             os.rename(config["BetweenFolder"] + image_location, renamed_path)
             shutil.move(renamed_path, config["FoundLogosFolder"])
 
@@ -740,8 +702,7 @@ def add_image_to_catalog(zip_in, image_location, config):
 def place_logo_body(file_in, file_out, config):
     log_information['Inputfile'] = file_in
     file_path = file_in
-    # logo_found, num_logos, status, note, warning = '', 0, '', '', '',
-    isExcel = False
+    header_images_paths = {}
 
     new_file_path = os.path.basename(file_path)
     skip_file_formats = ('.pptx', '.pdf', '.xlsx', '.xls')
@@ -749,17 +710,12 @@ def place_logo_body(file_in, file_out, config):
     if file_in.endswith('.docx'):
         doc = Document(file_path)
         header_images_paths = header_images[new_file_path]
+        doc.save((config["BetweenFolder"]) + new_file_path)
     elif file_in.endswith(skip_file_formats):
         # Move file and finish executing function
         os.rename(file_in, file_out)
-        # Process excel files
-        # elif file_in.endswith('.xls') or file_in.endswith('.xlsx'):
-        #     doc = openpyxl.load_workbook(file_path)
-        #     header_images_paths = []
-        #     isExcel = True
-        return True
 
-    doc.save((config["BetweenFolder"]) + new_file_path)
+        return True
 
     # Open input document and new document
     with ZipFile(open((config["BetweenFolder"]) + new_file_path, "rb")) as zip_in:
@@ -769,7 +725,6 @@ def place_logo_body(file_in, file_out, config):
             for path in zip_in.namelist():
                 if 'media' not in path:
                     file_content = zip_in.read(path)
-
                     # Copy file into new document
                     zip_out.writestr(path, file_content)
 
@@ -830,12 +785,8 @@ def place_logo_body(file_in, file_out, config):
             add_missing_images(zip_in, zip_out)
     # Remove file from betweenFolder
     os.remove((config["BetweenFolder"]) + new_file_path)
-
     # Remove file from original location
     os.remove(file_in)
-
-    #if logo_found == '':
-        #logo_found = 'No Logo Found'
 
     log_information['Notes'] = 'File processed successfully - body image'
     # log.write(f'{file_in};{logo_found};{str(num_logos)};{status};{note};{warning}\n')
@@ -991,7 +942,7 @@ def convert_to_pdf(file_in, config, word, excel, power_point):
 
 
 def process_file_word(file_in, file_out, config):
-    log_information['Inputfile'] = file_in
+    # log_information['Inputfile'] = file_in
     file_path = file_in
     file_out_path = file_out
 
@@ -1019,7 +970,7 @@ def process_file_word(file_in, file_out, config):
     with ZipFile(open((config["BetweenFolder"]) + new_file_path, "rb")) as zip_in:
         with ZipFile(file_out_path, "w", ZIP_DEFLATED) as zip_out:
             # copy document and replace content
-            copy_and_replace(zip_in, zip_out, config)
+            copy_and_replace(zip_in, zip_out)
             # check for logo
             status, note, warning = place_logo_header(zip_in, zip_out, config)
             # Add missing images
@@ -1049,11 +1000,7 @@ def copy_and_replace_content_excel(file_in, file_out, config):
     Returns None
     -------
     """
-
-    # logo, num_logos, status, note, warning = '', 0, '', '', ''
-
     new_file_path = os.path.basename(file_in)
-    log_information['Inputfile'] = file_in
 
     # Open the input Zip file for reading and the output Zip file for writing
     with ZipFile(open(config['InputFolder'] + '\\' + new_file_path, 'rb')) as zip_in:
@@ -1081,8 +1028,6 @@ def copy_and_replace_content_excel(file_in, file_out, config):
             if len(image_locations) > 0:
                 # Compare all images with the logo catalog
                 for image_location in image_locations:
-                    # add_image_to_catalog(zip_in=zip_in, image_location=image_location, config=config) # Disabling adding image to catalog 
-                    # print(image_location)
                     for logo_location in logo_locations:
                         # Do similarity check
                         similarity = compare_images(
@@ -1117,9 +1062,6 @@ def copy_and_replace_content_excel(file_in, file_out, config):
 
             # Perform text replacement in the xml files
             _replace_text_excel(zip_in=zip_in, zip_out=zip_out, config=config)
-
-            #if log_information['Logo'] == '':
-                #logo = 'No Logo Found'
 
             log_information['Notes'] = 'File processed successfully'
             # log.write(f'{file_in};{logo};{str(num_logos)};{status};{note};{warning}\n')
@@ -1280,10 +1222,7 @@ def process_file_powerpoint(file_in, file_out, config):
     Returns None
     -------
     """
-
-    #logo, num_logos, status, note, warning = '', 0, '', '', ''
-
-    log_information['Inputfile'] = file_in
+    # log_information['Inputfile'] = file_in
 
     file_path = file_in  # Path to the input file
     file_out_path = file_out  # Path to the output file
@@ -1310,7 +1249,6 @@ def process_file_powerpoint(file_in, file_out, config):
 
             # Extract all images from the presentation stored in the media folder
             image_locations = [img_loc for img_loc in zip_in.namelist() if '/media/' in img_loc]
-            # print(image_locations)  # TESTING
             # Extract all images
             zip_in.extractall(config['BetweenFolder'], members=image_locations)
 
@@ -1372,13 +1310,11 @@ def process_file_powerpoint(file_in, file_out, config):
 
     insert_replacement_image_to_slide(prs=prs, config=config)  # Insert the BakerHughes logo in
 
-    changed_color = change_bg_color(prs=prs)  # Change the background color of the slides in the presentation
-    #if changed_color:
-        #note += ' - Changed background color on slides'
+    change_bg_color(prs=prs)  # Change the background color of the slides in the presentation
+
     prs.save(file_out_path)  # Save the presentation
 
     log_information['Notes'] = 'File processed successfully'
-    # log.write(f'{file_in};{logo};{str(num_logos)};{status};{note};{warning}\n')
 
     return True
 
@@ -1748,7 +1684,10 @@ def disable_background_graphics(zip_in, zip_out, xml_path):
     zip_out.writestr(xml_path, modified_xml)
 
 
-pdfs = []
+def convert_to_pdf_2(file_path, file_name, config):
+    cv_pdf_2_docx = ConverterPdf2Docx(file_path)
+    cv_pdf_2_docx.convert(config['InputFolder'] + f'/{file_name}.docx', start=0, end=None)
+    cv_pdf_2_docx.close()
 
 
 def process_file_pdf(file_in, file_out, config):
@@ -1758,9 +1697,39 @@ def process_file_pdf(file_in, file_out, config):
     file_out_path = file_out.replace('.pdf', '.docx')
 
     if file_path.endswith('.pdf'):
-        cv_pdf_2_docx = ConverterPdf2Docx(file_path)
+        start_time = time()
+        p = multiprocessing.Process(target=convert_to_pdf_2, args=(file_path, file_name, config))
+        p.start()
+        while time() - start_time < 60:
+            if not p.is_alive():
+                p.join()
+                break
+            sleep(.1)
+        else:
+            print('TIMED OUT - TERMINATING PROCESS')
+            p.terminate()
+            p.join()
+            raise Exception('TIMED OUT - Process Terminated')
+
+        """cv_pdf_2_docx = ConverterPdf2Docx(file_path)
         cv_pdf_2_docx.convert(config['InputFolder'] + f'/{file_name}.docx', start=0, end=None)
-        cv_pdf_2_docx.close()
+        cv_pdf_2_docx.close()"""
+
+    """start_process_time = time()
+    p2 = multiprocessing.Process(target=process_file_word, args=(
+        config['InputFolder'] + f'/{file_name}.docx', file_out_path, config, header_images_pdf))
+    p2.start()
+    while time() - start_process_time < 120:
+        if not p2.is_alive():
+            p2.join()
+            break
+        sleep(.1)
+    else:
+        print('TIMED OUT - TERMINATING PROCESS')
+        p2.terminate()
+        p2.join()
+        os.remove(config['InputFolder'] + f'/{file_name}.docx')
+        raise Exception('TIMED OUT - Process Terminated')"""
 
     process_file_word(file_in=config['InputFolder'] + f'/{file_name}.docx',
                       file_out=file_out_path, config=config)
@@ -1791,7 +1760,7 @@ def process_file(file_in, file_out, config):
     match file_extension:
         case '.doc' | '.docx' | '.docm':
             process_file_word(file_in, file_out, config)
-        case '.xlsx' | '.xls' | 'xlsm':
+        case '.xlsx' | '.xls':
             process_file_excel(file_in, file_out, config)
             file_type = 'excel'
         case '.pptx':
@@ -1889,15 +1858,15 @@ def prepare_log(config):
     log_name = f"BH_Rebrand_{log_time}.csv"
     log_path = os.path.join(config["LogFolder"], log_name)
 
-    # pylint: disable=R1732
-    # Disables consider using with for resource allocation
-    # Log needs to be closed in main function after processing all files
+    # Open Log - it will need to be closed in main function after processing all files
     log = open(log_path, "w+", encoding="utf-8")
 
+    # Create the header for the log
     log.write("sep=;\n")
     log.write("Inputfile;Logo;NumLogos;Notes;LegacyText;Time;Warning\n")
 
     print(f"Logging in file {log_name}")
+
     return log, log_path
 
 
@@ -1907,6 +1876,12 @@ def main():
     """
     script_run_time = time()
 
+    # Multiprocessing manager - currently not utilized in script - needed when file processing is done using separate
+    # processes to share the header_images_pdf variable across processes
+    # For regular file processing the header_images global variable is used by default
+    # manager = multiprocessing.Manager()
+    # header_images_pdf = manager.dict()
+
     if len(sys.argv) == 2:
         # Put elements of config file into a dictionary
         config = map_config(sys.argv[1])
@@ -1915,12 +1890,17 @@ def main():
         for folder in FOLDERS:
             if not os.path.isdir(config[folder]):
                 os.mkdir(config[folder])
-                
+
         # Clean the project before starting (used for testing)
         delete_all_contents(config)
 
-        # Check PDF conversion
-        pdf_conversion = False
+        # Prepare the log file
+        log, log_path = prepare_log(config)
+
+        process_file_failure_count = 0
+
+        # PDF conversion is currently NOT required for file processing
+        """pdf_conversion = False
         if "true" in config["PDF"].lower():
             pdf_conversion = True
             print("Starting COM Server for PDF conversion")
@@ -1933,14 +1913,10 @@ def main():
             word, excel, power_point = start_com_servers(filetypes)
 
             # End timer and output time
-            print(f"Starting server took {time() - start_time:.3f} seconds")
-
+            print(f"Starting server took {time() - start_time:.3f} seconds")"""
 
         # Check if input directory exists
         if os.path.isdir(config["InputFolder"]):
-            global log;
-            log, log_path = prepare_log(config)
-
             # Decide on output folder
             if config["CompareLogoByPixels"]:
                 output_folder = config["HeaderImageReplacedFoler"]
@@ -1950,9 +1926,8 @@ def main():
             # Get total file count and set counter
             file_count = len(os.listdir(config['InputFolder']))
             file_counter = 1
-            process_file_failure_count = 0
 
-            # Sort files to process Word files (.docx, .doc, .docm) first before other file types
+            # Sort files to process Word files first before other file types
             sorted_files = sorted(os.listdir(config["InputFolder"]),
                                   key=lambda x: (not x.lower().endswith((".docx", ".doc", ".docm")), x))
 
@@ -1964,6 +1939,22 @@ def main():
                 # Create input and output path and start file processing
                 file_in = os.path.join(config["InputFolder"], file)
                 file_out = os.path.join(output_folder, file)
+
+                # Get the document number for the current file being processed
+                doc_num = file_in.split('\\')[-1]
+
+                # If the document number is present in the 'ProcessedFolder', the file has been already re-branded
+                if doc_num in os.listdir(config['ProcessedFolder']):
+                    print(f'{file_in} skipped - File has already been processed')
+                    log.write(f'{file_in};-;-;File has already been re-branded;File Skipped;-;-\n')
+                    continue
+
+                # Functionality for handling 'Saving as macro-enabled workbook' pop-up is not implemented in the
+                # script as of right now skip .xlsm files
+                if file_in.endswith(".xlsm"):
+                    print(f'{file_in} skipped - XLSM format found')
+                    log.write(f'{file_in};-;-;XLSM format found;File Skipped;-;-\n')
+                    continue
 
                 # Check if current file is a path to a folder
                 if os.path.isdir(file_in):
@@ -1989,11 +1980,12 @@ def main():
                 print(f"File {file_counter}/{file_count} -- Processing {file}")
                 try:
                     if os.path.getsize(file_in) != 0:
+                        log_information['Inputfile'] = file_in
                         process_file(file_in, file_out, config)
                         processing_time = time() - start_time
-                        log_information['Time'] = processing_time
+                        log_information['Time'] = str(processing_time)
+                        print(f"Processing took {time() - start_time:.3f} seconds")
                         log.write(';'.join([str(value) for key, value in log_information.items() if key]) + '\n')
-                        reset_log_info()
                     else:
                         print(f"File skipped because it's empty: {file}")
                         log.write(f"{file_in};-;-;File skipped because it's empty!;-;-\n")
@@ -2003,15 +1995,10 @@ def main():
                     log.write(f"{file_in};-;-;File failed to process!;Error:{e};-\n")
                 # End timer and output time
                 file_counter += 1
-                #processing_time = time() - start_time
-                #log_information['Time'] = processing_time
-                print(f"Processing took {time() - start_time:.3f} seconds")
-                #if processing_time:
-                    #log.write(';'.join([str(value) for key, value in log_information.items() if key]) + '\n')
-                    #reset_log_info()
+                reset_log_info()
 
                 # Convert to PDF
-                if pdf_conversion:
+                """if pdf_conversion:
                     # Start timer
                     start_converting_time = time()
 
@@ -2024,7 +2011,7 @@ def main():
                     convert_to_pdf(file_out, config, word, excel, power_point)
 
                     # End timer and output time
-                    print(f"Converting took {time() - start_converting_time:.3f} seconds")
+                    print(f"Converting took {time() - start_converting_time:.3f} seconds")"""
         else:
             print("Specify an existing input folder containing the documents and an output folder")
 
@@ -2032,10 +2019,11 @@ def main():
         if config["CompareLogoByPixels"]:
             body_image_replace = time()
             file_counter = 1
+            file_count = len(os.listdir(config['InputFolder']))
             body_replace_failure_count = 0
             global file_run_times
 
-            # Sort files to process Word files (.docx, .doc, .docm) first before other file types
+            # Sort files to process Word files first before other file types
             sorted_files = sorted(os.listdir(config["HeaderImageReplacedFoler"]),
                                   key=lambda x: (not x.lower().endswith((".docx", ".doc", ".docm")), x))
 
@@ -2057,15 +2045,15 @@ def main():
                     continue
 
                 # Replace image inside body
-                print(f'File {file_counter}/{file_count} -- Replacing body image for: {file_body}')
+                print(f'File {file_counter}/{file_count} -- Replacing body image for: {file_in}')
                 try:
                     place_logo_body(file_in, file_out, config)
                     if file_in.endswith('.docx'):
-                        log_information['Time'] = time() - process_time
+                        log_information['Time'] = str(time() - process_time)
                         log.write(';'.join([str(value) for key, value in log_information.items() if key]) + '\n')
                         reset_log_info()
                 except Exception as e:
-                    print(f'Failed replacing the body images for file: {file_body} \nError: {e}')
+                    print(f'Failed replacing the body images for file: {file_body} \nError: {str(e.__traceback__)}')
                     body_replace_failure_count += 1
                     log.write(f"{file_in};-;-;Failed replacing the body images!;Error:{e};-\n")
 
@@ -2076,27 +2064,34 @@ def main():
                 # If the current input file originally was 'pdf', convert it back to pdf
                 if file_in.split('\\')[-1].replace('.docx', '.pdf') in pdfs:
                     file_out_pdf = file_out.replace('.docx', '.pdf')  # Update the output path with 'pdf' extension
-                    ConvertDocx2Pdf(file_out, file_out_pdf)  # Convert docx to pdf
-                    os.remove(file_out)  # Remove the docx copy from the output folder
+                    try:
+                        ConvertDocx2Pdf(file_out, file_out_pdf)  # Convert docx to pdf
+                        os.remove(file_out)  # Remove the docx copy from the output folder
+                    except Exception as e:
+                        log.write(f'{file_out};-;-;Failed converting to PDF;Error{e};-\n')
+                        continue
 
                     # Increment PDF processing timer
                     file_run_times['pdf'] = file_run_times['pdf'] + (time() - process_time)
                 else:
                     # Increment word processing timer
                     file_run_times['word'] = file_run_times['word'] + (time() - process_time)
-                    #if file_in.endswith('.docx'):
-                        #log_information['Time'] = time() - process_time
-                        #log.write(';'.join([str(value) for key, value in log_information.items() if key]) + '\n')
-                        #reset_log_info()
 
-        # Close COM Server
-        if pdf_conversion:
-            quit_com_servers(word, excel, power_point)
+            print(
+                f"All done! \nThe script ran for {strftime('%H:%M:%S', gmtime(time() - script_run_time))} seconds"
+                f"\nReplacing the files' body images took: {strftime('%H:%M:%S', gmtime(time() - body_image_replace))} "
+                f"seconds\nTotal image comparisons: {image_comparisons:,}\nProcessed file failed: "
+                f"{process_file_failure_count}\nBody image replacement fails count:{body_replace_failure_count}\n\nTime "
+                f"breakdown:\nWord: {format_time(file_run_times['word'])}\nExcel: "
+                f"{format_time(file_run_times['excel'])}\nPowerPoint: {format_time(file_run_times['powerpoint'])}\nPDF: "
+                f"{format_time(file_run_times['pdf'])}")
 
+        # Close the log file
         log.close()
 
-        print(
-            f"All done! \nThe script ran for {strftime('%H:%M:%S', gmtime(time() - script_run_time))} seconds\nReplacing the files' body images took: {strftime('%H:%M:%S', gmtime(time() - body_image_replace))} seconds\nTotal image comparisons: {image_comparisons:,}\nProcessed file failed: {process_file_failure_count}\nBody image replacement fails count:{body_replace_failure_count}\n\nTime breakdown:\nWord: {format_time(file_run_times['word'])}\nExcel: {format_time(file_run_times['excel'])}\nPowerPoint: {format_time(file_run_times['powerpoint'])}\nPDF: {format_time(file_run_times['pdf'])}")
+        # Close COM Server
+        """if pdf_conversion:
+            quit_com_servers(word, excel, power_point)"""
 
     else:
         print("Specify an existing config file")
@@ -2118,9 +2113,9 @@ def format_time(seconds):
 
 
 def _modify_xml_image_crop_fit(zip_in, zip_out, xml_file_path):
-    '''
+    """
     Remove the rectangle element, from an XML file, that is responsible for cropping an image.
-    '''
+    """
     # Read the XML file from the ZipFile object
     with zip_in.open(xml_file_path) as xml_file:
         xml_data = xml_file.read()
@@ -2186,11 +2181,11 @@ def compare_images(image_path1, image_path2):
         deviation = np.mean(np.abs(image1_array - image2_array))
 
         # Pictures are similar if their deviation is lower than the set threshold
-        similarity = deviation < 10
+        similarity = deviation < 15
 
         # Increment counter
         image_comparisons += 1
-    except Exception as e:
+    except Exception:
         pass
         # print('Image format not supported: ', str(e)) # FOR TESTING
 
@@ -2236,22 +2231,6 @@ def map_config(configfile):
     return cfg_dict
 
 
-def delete_folder_contents(folder_path):
-    """
-    Delete all files within a folder.
-
-    Args:
-        folder_path (str): Path to the folder.
-
-    Returns:
-        None
-    """
-    for file_name in os.listdir(folder_path):
-        file_path = os.path.join(folder_path, file_name)
-        if os.path.isfile(file_path):
-            os.remove(file_path)
-
-
 def delete_all_contents(config):
     """
     Delete all file contents from the specified folders.
@@ -2271,9 +2250,32 @@ def delete_all_contents(config):
     ]
 
     for folder in folders:
-        delete_folder_contents(folder)
+        _delete_folder_contents(folder)
+
+
+def _delete_folder_contents(folder_path):
+    """
+    Delete all files within a folder.
+
+    Args:
+        folder_path (str): Path to the folder.
+
+    Returns:
+        None
+    """
+    for file_name in os.listdir(folder_path):
+        file_path = os.path.join(folder_path, file_name)
+        if os.path.isfile(file_path):
+            os.remove(file_path)
+
 
 def reset_log_info():
+    """
+    Reset log information to default values
+
+    Returns:
+        None
+    """
     log_information['Inputfile'] = ''
     log_information['Logo'] = 'No Logo Found'
     log_information['NumLogos'] = 0
@@ -2281,6 +2283,7 @@ def reset_log_info():
     log_information['LegacyText'] = ''
     log_information['Time'] = ''
     log_information['Warning'] = ''
+
 
 if __name__ == "__main__":
     main()
